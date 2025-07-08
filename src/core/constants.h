@@ -28,7 +28,7 @@ enum class AudioCaptureProvider : int {
 };
 
 // Audio Analysis
-constexpr size_t DEFAULT_NUM_BANDS = 32;
+constexpr size_t DEFAULT_NUM_BANDS = 64;
 constexpr size_t DEFAULT_FFT_SIZE = 512;
 constexpr float DEFAULT_FLUX_ALPHA = 0.1f;
 constexpr float DEFAULT_FLUX_THRESHOLD_MULTIPLIER = 1.5f;

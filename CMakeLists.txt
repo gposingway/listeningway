@@ -22,7 +22,6 @@ include_directories(${RESHADE_SDK_PATH})
 include_directories(
     ${CMAKE_SOURCE_DIR}/src
     ${CMAKE_SOURCE_DIR}/src/audio
-    ${CMAKE_SOURCE_DIR}/src/audio/beat_detection
     ${CMAKE_SOURCE_DIR}/src/core
     ${CMAKE_SOURCE_DIR}/src/core/configuration
     ${CMAKE_SOURCE_DIR}/src/utils
@@ -48,12 +47,6 @@ add_library(${PROJECT_NAME} SHARED
     src/audio/capture/providers/audio_capture_provider_system.cpp
     src/audio/capture/providers/audio_capture_provider_off.h
     src/audio/capture/providers/audio_capture_provider_off.cpp
-    src/audio/beat_detection/beat_detector.cpp
-    src/audio/beat_detection/beat_detector.h
-    src/audio/beat_detection/beat_detector_simple_energy.cpp
-    src/audio/beat_detection/beat_detector_simple_energy.h
-    src/audio/beat_detection/beat_detector_spectral_flux_auto.cpp
-    src/audio/beat_detection/beat_detector_spectral_flux_auto.h
     assets/listeningway.rc
 )
 

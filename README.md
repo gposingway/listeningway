@@ -9,19 +9,11 @@
 [<img src="https://github.com/user-attachments/assets/20794810-9e43-4167-bb0e-faf46275186e">](https://github.com/gposingway/Listeningway/releases/latest)
 
 
----
 
-![GitHub release (latest by date)](https://img.shields.io/github/v/release/gposingway/Listeningway)
-![GitHub all releases](https://img.shields.io/github/downloads/gposingway/Listeningway/total)
-[![License: CC BY 4.0](https://img.shields.io/badge/License-CC%20BY%204.0-lightgrey.svg)](https://creativecommons.org/licenses/by/4.0/)
-![GitHub last commit](https://img.shields.io/github/last-commit/gposingway/Listeningway/dev)
-![Code Size](https://img.shields.io/github/languages/code-size/gposingway/Listeningway)
-![GitHub top language](https://img.shields.io/github/languages/top/gposingway/Listeningway)
-![GitHub issues](https://img.shields.io/github/issues/gposingway/Listeningway)
-![GitHub contributors](https://img.shields.io/github/contributors/gposingway/Listeningway)
+
+
 
 </div>
-
 
 ---
 

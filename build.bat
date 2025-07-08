@@ -4,7 +4,9 @@ setlocal
 set RESHADE_SDK_PATH=%CD%\third_party\reshade\include
 
 REM === Generate ListeningwayUniforms.fxh from template ===
-set NUM_BANDS=32
+REM TODO: Read NUM_BANDS from constants.h instead of hardcoding here
+REM This should extract DEFAULT_NUM_BANDS from src/core/constants.h automatically
+set NUM_BANDS=64
 set TEMPLATE=templates\ListeningwayUniforms.fxh.template
 set OUTPUT=assets\ListeningwayUniforms.fxh
 if exist %TEMPLATE% (

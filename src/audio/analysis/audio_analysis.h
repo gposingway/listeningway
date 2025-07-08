@@ -3,14 +3,13 @@
 #include <cstddef>
 #include <memory>
 #include <mutex>
-#include "constants.h"
-#include "beat_detector.h"
+#include "../../core/constants.h"
 #include "../../configuration/configuration_manager.h"
 
 // Audio analysis results for one frame
 struct AudioAnalysisData {
     float volume = 0.0f;                // Normalized RMS volume [0,1]
-    std::vector<float> freq_bands;      // Normalized frequency bands (with equalizer)
+    std::vector<float> freq_bands;      // Normalized frequency bands (configurable count)
     std::vector<float> raw_freq_bands;  // Raw frequency bands (without equalizer)
     float beat = 0.0f;                 // Beat detection value [0,1]
     
@@ -20,56 +19,50 @@ struct AudioAnalysisData {
     float beat_phase = 0.0f;           // Current phase in beat cycle [0,1]
     bool tempo_detected = false;       // Whether tempo has been detected
 
-    // Internal analysis state (not for API consumers)
-    std::vector<float> _prev_magnitudes; // Previous FFT magnitudes (for spectral flux)
-    float _flux_avg = 0.0f;             // Moving average of spectral flux
-    float _flux_low_avg = 0.0f;         // Moving average of low-frequency spectral flux    
-    
     // Stereo analysis
     float volume_left = 0.0f;         // Left channel volume
     float volume_right = 0.0f;        // Right channel volume
     float audio_pan = 0.0f;           // Pan value [-1, +1]
     float audio_format = 0.0f;        // Audio format (0=none, 1=mono, 2=stereo, 6=5.1, 8=7.1)
+    
+    // Internal analysis state (not for API consumers)
+    std::vector<float> _prev_freq_bands;     // Previous frame for smooth transitions
 
-    AudioAnalysisData(size_t bands = 8) : freq_bands(bands, 0.0f), raw_freq_bands(bands, 0.0f) {}
+    AudioAnalysisData(size_t bands = DEFAULT_NUM_BANDS) : 
+        freq_bands(bands, 0.0f), 
+        raw_freq_bands(bands, 0.0f),
+        _prev_freq_bands(bands, 0.0f) {}
+    
+    // Convenience method to resize for different band counts
+    void ResizeBands(size_t new_band_count) {
+        freq_bands.resize(new_band_count, 0.0f);
+        raw_freq_bands.resize(new_band_count, 0.0f);
+        _prev_freq_bands.resize(new_band_count, 0.0f);
+    }
 };
 
 /**
- * @brief Analyzer for audio data, using beat detection algorithms
+ * @brief Simplified analyzer for aesthetic audio visualization
  */
 class AudioAnalyzer {
 public:
-    /**
-     * @brief Constructor
-     */
     AudioAnalyzer();
-    
-    /**
-     * @brief Destructor
-     */
     ~AudioAnalyzer();
     
-    /**
-     * @brief Set the beat detection algorithm to use
-     * @param algorithm Algorithm index (0=SimpleEnergy, 1=SpectralFluxAuto)
-     */
-    void SetBeatDetectionAlgorithm(int algorithm);
-    
-    /**
-     * @brief Get the current beat detection algorithm
-     * @return Current algorithm index
-     */
-    int GetBeatDetectionAlgorithm() const;
-    
-    /**
-     * @brief Start audio analysis
-     */
     void Start();
+    void Stop();
     
     /**
-     * @brief Stop audio analysis
+     * @brief Set the beat detection algorithm (for compatibility - now uses configuration)
+     * @param algorithm Algorithm index (ignored in new system, uses config.beat.beat_style instead)
      */
-    void Stop();
+    void SetBeatDetectionAlgorithm(int algorithm) { /* No-op for compatibility */ }
+    
+    /**
+     * @brief Get the current beat detection algorithm (for compatibility)
+     * @return Always returns 0 (new system uses configuration)
+     */
+    int GetBeatDetectionAlgorithm() const { return 0; }
     
     /**
      * @brief Analyze a buffer of audio samples and update analysis data.
@@ -82,13 +75,33 @@ public:
 
 private:
     mutable std::mutex mutex_;
-    std::unique_ptr<IBeatDetector> beat_detector_;
-    int current_algorithm_ = 0;
     bool is_running_ = false;
+    
+    // Beat detection state
+    float bass_threshold_ = 0.0f;
+    float mid_threshold_ = 0.0f;
+    float beat_intensity_ = 0.0f;
+    float last_beat_time_ = 0.0f;
+    float total_time_ = 0.0f;
+    
+    // Frequency mapping for aesthetic analysis
+    struct ChannelMapping {
+        float min_freq, max_freq;
+        std::vector<size_t> fft_bins;
+    };
+    std::vector<ChannelMapping> channel_map_;
+    bool mapping_initialized_ = false;
+    
+    // High-resolution FFT accumulation buffer for gap-free frequency analysis
+    std::vector<float> accumulated_audio_;
+    size_t accumulation_pos_ = 0;
+    
+    void InitializeFrequencyMapping(size_t channel_count, size_t fft_size, float sample_rate);
+    float ProcessBeatDetection(const std::vector<float>& freq_bands, float dt, const Listeningway::Configuration& config);
 };
 
-// Global instance of the audio analyzer (accessible to all modules)
+// Global instance of the audio analyzer
 extern AudioAnalyzer g_audio_analyzer;
 
-// Standalone function to analyze audio buffers using the static config
+// Standalone function to analyze audio buffers
 void AnalyzeAudioBuffer(const float* data, size_t numFrames, size_t numChannels, AudioAnalysisData& out);

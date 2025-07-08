@@ -199,232 +199,146 @@ static void DrawFrequencyBands(const AudioAnalysisData& data) {
     ImGui::EndChild();
 }
 
-// Helper: Draw time/phase info
-static void DrawTimePhaseInfo() {
-    // Calculate time since start (same as in listeningway_addon.cpp)
-    static const auto start_time = std::chrono::steady_clock::now();
-    auto now = std::chrono::steady_clock::now();
-    std::chrono::duration<float> elapsed = now - start_time;
-    float time_seconds = elapsed.count();
-    float phase_60hz = std::fmod(time_seconds * 60.0f, 1.0f);
-    float phase_120hz = std::fmod(time_seconds * 120.0f, 1.0f);
-    float total_phases_60hz = time_seconds * 60.0f;
-    float total_phases_120hz = time_seconds * 120.0f;
-    ImGui::Text("Time/Phase Uniforms:");
-    ImGui::Text("  Seconds: %.3f", time_seconds);
-    ImGui::Text("  Phase 60Hz: %.3f", phase_60hz);
-    ImGui::Text("  Phase 120Hz: %.3f", phase_120hz);
-    ImGui::Text("  Total 60Hz cycles: %.1f", total_phases_60hz);
-    ImGui::Text("  Total 120Hz cycles: %.1f", total_phases_120hz);
-}
-
-// Helper: Draw Beat Detection Algorithm settings
+// Helper: Draw Artistic Beat Detection settings
 static void DrawBeatDetectionAlgorithm(const AudioAnalysisData& data) {
     auto& config = g_configManager.GetConfig();
     
-    ImGui::Text("Beat Detection Algorithm:");
+    ImGui::Text("Artistic Beat Detection:");
     
-    // Create a combo box for algorithm selection
-    const char* algorithms[] = { "Simple Energy (Original)", "Spectral Flux + Autocorrelation (Advanced)" };    int algorithm = config.beat.algorithm;    if (ImGui::Combo("Algorithm", &algorithm, algorithms, IM_ARRAYSIZE(algorithms))) {
-        config.beat.algorithm = algorithm;
-        LOG_DEBUG(std::string("[Overlay] Beat Detection Algorithm changed to ") + 
-                 (algorithm == 0 ? "Simple Energy" : "Spectral Flux + Autocorrelation"));
-        // Update the audio analyzer with the new algorithm
-        g_audio_analyzer.SetBeatDetectionAlgorithm(algorithm);
+    // Beat Style Selection
+    const char* beat_styles[] = { "Mixed (Balanced)", "Electronic", "Acoustic", "Vocal" };
+    int current_style = 0;
+    if (config.beat.beat_style == "electronic") current_style = 1;
+    else if (config.beat.beat_style == "acoustic") current_style = 2;
+    else if (config.beat.beat_style == "vocal") current_style = 3;
+    
+    if (ImGui::Combo("Beat Style", &current_style, beat_styles, IM_ARRAYSIZE(beat_styles))) {
+        switch(current_style) {
+            case 1: config.beat.beat_style = "electronic"; break;
+            case 2: config.beat.beat_style = "acoustic"; break;
+            case 3: config.beat.beat_style = "vocal"; break;
+            default: config.beat.beat_style = "mixed"; break;
+        }
+        LOG_DEBUG(std::string("[Overlay] Beat Style changed to ") + config.beat.beat_style);
     }
     
     if (ImGui::IsItemHovered(-1)) {
-        if (config.beat.algorithm == 0) {
-            ImGui::SetTooltip("Simple Energy: Works well with strong bass beats");
-        } else {
-            ImGui::SetTooltip("Advanced: Better for complex rhythms and various music genres");
+        switch(current_style) {
+            case 1: ImGui::SetTooltip("Electronic: Emphasizes kick drums and sharp electronic beats"); break;
+            case 2: ImGui::SetTooltip("Acoustic: Broader response for live instruments and drums"); break;
+            case 3: ImGui::SetTooltip("Vocal: Emphasizes vocal dynamics and breathing patterns"); break;
+            default: ImGui::SetTooltip("Mixed: Balanced detection for various music types"); break;
         }
     }
     
-    // Show advanced settings for the Spectral Flux + Autocorrelation algorithm
-    if (config.beat.algorithm == 1) {
-        // Create a collapsing section for advanced parameters
-        if (ImGui::CollapsingHeader("Advanced Algorithm Parameters", ImGuiTreeNodeFlags_DefaultOpen)) {
-            // Spectral Flux threshold adjustment
-            float spectral_flux_threshold = config.beat.spectralFluxThreshold;
-            if (ImGui::SliderFloat("##SpectralFluxThreshold", &spectral_flux_threshold, 0.01f, 0.2f, "%.3f")) {
-                config.beat.spectralFluxThreshold = spectral_flux_threshold;
-            }
-            ImGui::SameLine();
-            ImGui::Text("Spectral Flux Threshold");
-            if (ImGui::IsItemHovered(-1)) {
-                ImGui::SetTooltip("Lower value = more sensitive to subtle changes");            }
-            
-            // Tempo change threshold adjustment
-            float tempo_change_threshold = config.beat.tempoChangeThreshold;
-            if (ImGui::SliderFloat("##TempoChangeThreshold", &tempo_change_threshold, 0.1f, 0.5f, "%.2f")) {
-                config.beat.tempoChangeThreshold = tempo_change_threshold;
-            }
-            ImGui::SameLine();
-            ImGui::Text("Tempo Change Threshold");
-            if (ImGui::IsItemHovered(-1)) {
-                ImGui::SetTooltip("Higher value = more stable tempo, lower = adapts faster");
-            }
-              // Beat induction window adjustment
-            float beat_induction_window = config.beat.beatInductionWindow;
-            if (ImGui::SliderFloat("##BeatInductionWindow", &beat_induction_window, 0.05f, 0.2f, "%.2f")) {
-                config.beat.beatInductionWindow = beat_induction_window;
-            }
-            ImGui::SameLine();
-            ImGui::Text("Beat Induction Window");
-            if (ImGui::IsItemHovered(-1)) {
-                ImGui::SetTooltip("Larger window = more adaptive phase adjustment");
-            }
-              // Octave error weight adjustment
-            float octave_error_weight = config.beat.octaveErrorWeight;
-            if (ImGui::SliderFloat("##OctaveErrorWeight", &octave_error_weight, 0.5f, 0.9f, "%.2f")) {
-                config.beat.octaveErrorWeight = octave_error_weight;
-            }
-            ImGui::SameLine();
-            ImGui::Text("Octave Error Weight");
-            if (ImGui::IsItemHovered(-1)) {
-                ImGui::SetTooltip("Higher values favor base tempo vs half/double detection");
-            }
-            
-            // Display current tempo info directly (no tree node)
-            if (data.tempo_detected) {
-                ImGui::Text("Current Tempo: %.1f BPM (Confidence: %.2f)", data.tempo_bpm, data.tempo_confidence);
-                ImGui::Text("Beat Phase: %.2f", data.beat_phase);
-            } else {
-                ImGui::Text("No tempo detected yet");
-            }
-        }
-    }
-}
-
-// Helper: Draw Beat Decay Settings for both algorithms
-static void DrawBeatDecaySettings() {
-    auto& config = g_configManager.GetConfig();
-    ImGui::Text("Beat Decay Settings:");
-    if (config.beat.algorithm == 0) {
-        float beat_falloff_default = config.beat.falloffDefault;
-        if (ImGui::SliderFloat("##DefaultFalloffRate", &beat_falloff_default, 0.5f, 5.0f, "%.2f")) {
-            config.beat.falloffDefault = beat_falloff_default;
+    // Artistic Beat Controls
+    if (ImGui::CollapsingHeader("Beat Character Controls", ImGuiTreeNodeFlags_DefaultOpen)) {
+        float kick_punch = config.beat.kick_punch;
+        if (ImGui::SliderFloat("##KickPunch", &kick_punch, 0.5f, 3.0f, "%.2f")) {
+            config.beat.kick_punch = kick_punch;
         }
         ImGui::SameLine();
-        ImGui::Text("Default Falloff Rate");
+        ImGui::Text("Kick Punch");
         if (ImGui::IsItemHovered(-1)) {
-            ImGui::SetTooltip("Controls how quickly the beat indicator fades out\nHigher values = faster decay");
-        }
-        if (ImGui::CollapsingHeader("Adaptive Falloff Settings")) {
-            float beat_time_scale = config.beat.timeScale;
-            if (ImGui::SliderFloat("##TimeScale", &beat_time_scale, 1e-10f, 1e-8f, "%.2e")) {
-                config.beat.timeScale = beat_time_scale;
-            }
-            ImGui::SameLine();
-            ImGui::Text("Time Scale");
-            if (ImGui::IsItemHovered(-1)) {
-                ImGui::SetTooltip("Controls time scaling for beat interval");
-            }
-            float beat_time_initial = config.beat.timeInitial;
-            if (ImGui::SliderFloat("##InitialTime", &beat_time_initial, 0.1f, 1.0f, "%.2f")) {
-                config.beat.timeInitial = beat_time_initial;
-            }
-            ImGui::SameLine();
-            ImGui::Text("Initial Time");
-            if (ImGui::IsItemHovered(-1)) {
-                ImGui::SetTooltip("Controls initial time since last beat");
-            }
-            float beat_time_min = config.beat.timeMin;
-            if (ImGui::SliderFloat("##MinTime", &beat_time_min, 0.01f, 0.5f, "%.2f")) {
-                config.beat.timeMin = beat_time_min;
-            }
-            ImGui::SameLine();
-            ImGui::Text("Min Time");
-            if (ImGui::IsItemHovered(-1)) {
-                ImGui::SetTooltip("Controls minimum time for adaptive falloff");
-            }
-            float beat_time_divisor = config.beat.timeDivisor;
-            if (ImGui::SliderFloat("##TimeDivisor", &beat_time_divisor, 0.01f, 1.0f, "%.2f")) {
-                config.beat.timeDivisor = beat_time_divisor;
-            }
-            ImGui::SameLine();
-            ImGui::Text("Time Divisor");
-            if (ImGui::IsItemHovered(-1)) {
-                ImGui::SetTooltip("Controls divisor for adaptive falloff\nThese settings control how decay adapts to beat timing");
-            }
-        }
-    } else {
-        float spectral_flux_decay_multiplier = config.beat.spectralFluxDecayMultiplier;
-        if (ImGui::SliderFloat("##DecayMultiplier", &spectral_flux_decay_multiplier, 0.5f, 5.0f, "%.2f")) {
-            config.beat.spectralFluxDecayMultiplier = spectral_flux_decay_multiplier;
-        }
-        ImGui::SameLine();
-        ImGui::Text("Decay Multiplier");
-        if (ImGui::IsItemHovered(-1)) {
-            ImGui::SetTooltip("Controls how quickly the beat indicator fades out\nHigher values = faster decay relative to tempo\nThis algorithm automatically adapts to music tempo");
-        }
-    }
-}
-
-// Frequency Boost Settings section
-static void DrawFrequencyBoostSettings() {
-    auto& config = g_configManager.GetConfig();
-    
-    if (ImGui::CollapsingHeader("Frequency Boost Settings", ImGuiTreeNodeFlags_DefaultOpen)) {
-        ImGui::PushID("Equalizer");
-          // Use the same compact style as Frequency Band Mapping with text on the right
-        float equalizer_band1 = config.frequency.equalizerBands[0];
-        if (ImGui::SliderFloat("##band1", &equalizer_band1, OVERLAY_EQ_BAND_MIN, OVERLAY_EQ_BAND_MAX, "%.2f")) {
-            config.frequency.equalizerBands[0] = equalizer_band1;
-        }
-        ImGui::SameLine();
-        ImGui::Text("Low (Bass)");
-        if (ImGui::IsItemHovered(-1)) {
-            ImGui::SetTooltip("Boost for lowest frequency bands (bass)");
-        }
-          float equalizer_band2 = config.frequency.equalizerBands[1];
-        if (ImGui::SliderFloat("##band2", &equalizer_band2, OVERLAY_EQ_BAND_MIN, OVERLAY_EQ_BAND_MAX, "%.2f")) {
-            config.frequency.equalizerBands[1] = equalizer_band2;
-        }
-        ImGui::SameLine();
-        ImGui::Text("Low-Mid");
-        if (ImGui::IsItemHovered(-1)) {
-            ImGui::SetTooltip("Boost for low-mid frequency bands");
-        }
-          float equalizer_band3 = config.frequency.equalizerBands[2];
-        if (ImGui::SliderFloat("##band3", &equalizer_band3, OVERLAY_EQ_BAND_MIN, OVERLAY_EQ_BAND_MAX, "%.2f")) {
-            config.frequency.equalizerBands[2] = equalizer_band3;
-        }
-        ImGui::SameLine();
-        ImGui::Text("Mid");
-        if (ImGui::IsItemHovered(-1)) {
-            ImGui::SetTooltip("Boost for mid frequency bands");
-        }
-          float equalizer_band4 = config.frequency.equalizerBands[3];
-        if (ImGui::SliderFloat("##band4", &equalizer_band4, OVERLAY_EQ_BAND_MIN, OVERLAY_EQ_BAND_MAX, "%.2f")) {
-            config.frequency.equalizerBands[3] = equalizer_band4;
-        }
-        ImGui::SameLine();
-        ImGui::Text("Mid-High");
-        if (ImGui::IsItemHovered(-1)) {
-            ImGui::SetTooltip("Boost for mid-high frequency bands");
-        }
-          float equalizer_band5 = config.frequency.equalizerBands[4];
-        if (ImGui::SliderFloat("##band5", &equalizer_band5, OVERLAY_EQ_BAND_MIN, OVERLAY_EQ_BAND_MAX, "%.2f")) {
-            config.frequency.equalizerBands[4] = equalizer_band5;
-        }
-        ImGui::SameLine();
-        ImGui::Text("High (Treble)");
-        if (ImGui::IsItemHovered(-1)) {
-            ImGui::SetTooltip("Boost for highest frequency bands (treble)");
+            ImGui::SetTooltip("How sensitive to bass drums and kick sounds");
         }
         
-        ImGui::PopID();
-          // Add the equalizer width slider
-        float equalizer_width = config.frequency.equalizerWidth;
-        if (ImGui::SliderFloat("##EqualizerWidth", &equalizer_width, OVERLAY_EQ_WIDTH_MIN, OVERLAY_EQ_WIDTH_MAX, "%.2f")) {
-            config.frequency.equalizerWidth = equalizer_width;
+        float snare_snap = config.beat.snare_snap;
+        if (ImGui::SliderFloat("##SnareSnap", &snare_snap, 0.5f, 2.0f, "%.2f")) {
+            config.beat.snare_snap = snare_snap;
         }
         ImGui::SameLine();
-        ImGui::Text("Equalizer Width");
+        ImGui::Text("Snare Snap");
         if (ImGui::IsItemHovered(-1)) {
-            ImGui::SetTooltip("Controls band influence on neighboring frequencies\nLower = narrow bands with less overlap\nHigher = wider bands with more influence");
+            ImGui::SetTooltip("How sensitive to snare drums and percussion");
+        }
+        
+        float beat_boost = config.beat.beat_boost;
+        if (ImGui::SliderFloat("##BeatBoost", &beat_boost, 0.5f, 3.0f, "%.2f")) {
+            config.beat.beat_boost = beat_boost;
+        }
+        ImGui::SameLine();
+        ImGui::Text("Beat Boost");
+        if (ImGui::IsItemHovered(-1)) {
+            ImGui::SetTooltip("Overall beat enhancement multiplier");
+        }
+        
+        float beat_hold = config.beat.beat_hold;
+        if (ImGui::SliderFloat("##BeatHold", &beat_hold, 0.1f, 1.0f, "%.2f")) {
+            config.beat.beat_hold = beat_hold;
+        }
+        ImGui::SameLine();
+        ImGui::Text("Beat Hold");
+        if (ImGui::IsItemHovered(-1)) {
+            ImGui::SetTooltip("How long beats visually sustain (seconds)");
+        }
+        
+        // Display current tempo info
+        if (data.tempo_detected) {
+            ImGui::Text("Current Tempo: %.1f BPM (Confidence: %.2f)", data.tempo_bpm, data.tempo_confidence);
+            ImGui::Text("Beat Phase: %.2f", data.beat_phase);
+        } else {
+            ImGui::Text("No tempo detected yet");
+        }
+    }
+}
+
+// Helper: Draw Artistic Frequency Controls 
+static void DrawBeatDecaySettings() {
+    auto& config = g_configManager.GetConfig();
+    ImGui::Text("Artistic Frequency Controls:");
+    
+    if (ImGui::CollapsingHeader("Frequency Response Controls", ImGuiTreeNodeFlags_DefaultOpen)) {
+        float bass_punch = config.frequency.bass_punch;
+        if (ImGui::SliderFloat("##BassPunch", &bass_punch, 0.5f, 3.0f, "%.2f")) {
+            config.frequency.bass_punch = bass_punch;
+        }
+        ImGui::SameLine();
+        ImGui::Text("Bass Punch");
+        if (ImGui::IsItemHovered(-1)) {
+            ImGui::SetTooltip("Make low frequencies hit harder for visual impact");
+        }
+        
+        float high_detail = config.frequency.high_detail;
+        if (ImGui::SliderFloat("##HighDetail", &high_detail, 0.5f, 3.0f, "%.2f")) {
+            config.frequency.high_detail = high_detail;
+        }
+        ImGui::SameLine();
+        ImGui::Text("High Detail");
+        if (ImGui::IsItemHovered(-1)) {
+            ImGui::SetTooltip("Bring out crisp details in high frequencies");
+        }
+        
+        float vocal_focus = config.frequency.vocal_focus;
+        if (ImGui::SliderFloat("##VocalFocus", &vocal_focus, 0.5f, 3.0f, "%.2f")) {
+            config.frequency.vocal_focus = vocal_focus;
+        }
+        ImGui::SameLine();
+        ImGui::Text("Vocal Focus");
+        if (ImGui::IsItemHovered(-1)) {
+            ImGui::SetTooltip("Emphasize voices and instruments in mid-range");
+        }
+    }
+    
+    if (ImGui::CollapsingHeader("Visual Timing Controls", ImGuiTreeNodeFlags_DefaultOpen)) {
+        float quick_response = config.frequency.quick_response;
+        if (ImGui::SliderFloat("##QuickResponse", &quick_response, 0.1f, 5.0f, "%.2f")) {
+            config.frequency.quick_response = quick_response;
+        }
+        ImGui::SameLine();
+        ImGui::Text("Quick Response");
+        if (ImGui::IsItemHovered(-1)) {
+            ImGui::SetTooltip("How fast visuals react to audio changes");
+        }
+        
+        float smooth_fade = config.frequency.smooth_fade;
+        if (ImGui::SliderFloat("##SmoothFade", &smooth_fade, 0.1f, 0.99f, "%.2f")) {
+            config.frequency.smooth_fade = smooth_fade;
+        }
+        ImGui::SameLine();
+        ImGui::Text("Smooth Fade");
+        if (ImGui::IsItemHovered(-1)) {
+            ImGui::SetTooltip("How gently levels drop off for smooth visuals");
         }
     }
 }
@@ -685,8 +599,6 @@ void DrawListeningwayDebugOverlay(const AudioAnalysisData& data) {
         ImGui::Separator();
         DrawFrequencyBands(data);
         ImGui::Separator();
-        DrawTimePhaseInfo();
-        ImGui::Separator();
         
         // Beat Detection Algorithm Selection and Configuration
         DrawBeatDetectionAlgorithm(data);
@@ -694,93 +606,6 @@ void DrawListeningwayDebugOverlay(const AudioAnalysisData& data) {
         
         // Beat Decay Settings
         DrawBeatDecaySettings();
-        ImGui::Separator();        ImGui::Text("Frequency Band Mapping:");
-        auto& config = g_configManager.GetConfig();
-        bool band_log_scale = config.frequency.logScaleEnabled;
-        if (ImGui::Checkbox("Logarithmic Bands", &band_log_scale)) {
-            config.frequency.logScaleEnabled = band_log_scale;
-        }
-        if (ImGui::IsItemHovered(-1)) {
-            ImGui::SetTooltip("Log scale better matches hearing; linear is legacy");
-        }
-        
-        // Display log-specific settings only when log scale is enabled
-        if (config.frequency.logScaleEnabled) {
-            float band_log_strength = config.frequency.logStrength;
-            if (ImGui::SliderFloat("##LogStrength", &band_log_strength, OVERLAY_LOG_STRENGTH_MIN, OVERLAY_LOG_STRENGTH_MAX, "%.2f")) {
-                config.frequency.logStrength = band_log_strength;
-            }
-            ImGui::SameLine();
-            ImGui::Text("Log Strength");
-            if (ImGui::IsItemHovered(-1)) {
-                ImGui::SetTooltip("Controls bass detail in logarithmic scale");
-            }
-        
-            float band_min_freq = config.frequency.minFreq;
-            if (ImGui::SliderFloat("##MinFreq", &band_min_freq, OVERLAY_MIN_FREQ_MIN, OVERLAY_MIN_FREQ_MAX, "%.0f")) {
-                config.frequency.minFreq = band_min_freq;
-            }
-            ImGui::SameLine();
-            ImGui::Text("Min Freq (Hz)");
-            if (ImGui::IsItemHovered(-1)) {
-                ImGui::SetTooltip("Minimum frequency for frequency bands");
-            }
-            
-            float band_max_freq = config.frequency.maxFreq;
-            if (ImGui::SliderFloat("##MaxFreq", &band_max_freq, OVERLAY_MAX_FREQ_MIN, OVERLAY_MAX_FREQ_MAX, "%.0f")) {
-                config.frequency.maxFreq = band_max_freq;
-            }
-            ImGui::SameLine();
-            ImGui::Text("Max Freq (Hz)");
-            if (ImGui::IsItemHovered(-1)) {
-                ImGui::SetTooltip("Maximum frequency for frequency bands");
-            }
-
-        }
-
-        
-        // 5-band equalizer settings
-        DrawFrequencyBoostSettings();
-        ImGui::Separator();        // Band-limited Beat Detection Settings
-        ImGui::Text("Band-Limited Beat Detection:");
-        if (ImGui::IsItemHovered(-1)) {
-            ImGui::SetTooltip("Focus beat detection on specific frequency range, e.g., bass/kick drums");
-        }
-        
-        float beat_min_freq = config.beat.minFreq;
-        if (ImGui::SliderFloat("##BeatMinFreq", &beat_min_freq, OVERLAY_BEAT_MIN_FREQ_MIN, OVERLAY_BEAT_MIN_FREQ_MAX, "%.1f")) {
-            config.beat.minFreq = beat_min_freq;
-        }
-        ImGui::SameLine();
-        ImGui::Text("Beat Min Freq (Hz)");
-        
-        float beat_max_freq = config.beat.maxFreq;
-        if (ImGui::SliderFloat("##BeatMaxFreq", &beat_max_freq, OVERLAY_BEAT_MAX_FREQ_MIN, OVERLAY_BEAT_MAX_FREQ_MAX, "%.1f")) {
-            config.beat.maxFreq = beat_max_freq;
-        }
-        ImGui::SameLine();
-        ImGui::Text("Beat Max Freq (Hz)");
-        
-        float flux_low_alpha = config.beat.fluxLowAlpha;
-        if (ImGui::SliderFloat("##LowFluxSmoothing", &flux_low_alpha, OVERLAY_FLUX_SMOOTH_MIN, OVERLAY_FLUX_SMOOTH_MAX, "%.3f")) {
-            config.beat.fluxLowAlpha = flux_low_alpha;
-        }
-        ImGui::SameLine();
-        ImGui::Text("Low Flux Smoothing");
-        if (ImGui::IsItemHovered(-1)) {
-            ImGui::SetTooltip("Lower value = smoother, higher = more responsive");
-        }
-        
-        float flux_low_threshold_multiplier = config.beat.fluxLowThresholdMultiplier;
-        if (ImGui::SliderFloat("##LowFluxThreshold", &flux_low_threshold_multiplier, OVERLAY_FLUX_THRESH_MIN, OVERLAY_FLUX_THRESH_MAX, "%.2f")) {
-            config.beat.fluxLowThresholdMultiplier = flux_low_threshold_multiplier;
-        }
-        ImGui::SameLine();
-        ImGui::Text("Low Flux Threshold");
-        if (ImGui::IsItemHovered(-1)) {
-            ImGui::SetTooltip("Lower value = more sensitive, higher = less false positives");
-        }
-        
         ImGui::Separator();
           // Consolidated buttons for Save, Load and Default
         ImGui::Text("Settings Management:");
@@ -820,5 +645,6 @@ void DrawListeningwayDebugOverlay(const AudioAnalysisData& data) {
     } catch (const std::exception& ex) {
         LOG_ERROR(std::string("[Overlay] Exception in DrawListeningwayDebugOverlay: ") + ex.what());
     } catch (...) {
-        LOG_ERROR("[Overlay] Unknown exception in DrawListeningwayDebugOverlay.");    }
+        LOG_ERROR("[Overlay] Unknown exception in DrawListeningwayDebugOverlay.");
+    }
 }
