@@ -133,7 +133,7 @@ static void DrawWebsite() {
 // Helper: Draw volume meter
 static void DrawVolume(const AudioAnalysisData& data) {
     auto& config = g_configManager.GetConfig();
-    float amp = config.frequency.amplifier;
+    float amp = config.frequency.volume_amplifier;
     ImGui::AlignTextToFramePadding();
     ImGui::Text("Volume:");
     ImGui::SameLine();
@@ -143,7 +143,7 @@ static void DrawVolume(const AudioAnalysisData& data) {
 // Helper: Draw beat meter
 static void DrawBeat(const AudioAnalysisData& data) {
     auto& config = g_configManager.GetConfig();
-    float amp = config.frequency.amplifier;
+    float amp = config.frequency.volume_amplifier;
     ImGui::AlignTextToFramePadding();
     ImGui::Text("Beat:");
     ImGui::SameLine();
@@ -153,7 +153,7 @@ static void DrawBeat(const AudioAnalysisData& data) {
 // Helper: Draw frequency bands with view mode
 static void DrawFrequencyBands(const AudioAnalysisData& data) {
     auto& config = g_configManager.GetConfig();
-    float amp = config.frequency.amplifier;
+    float amp = config.frequency.band_amplifier;
     ImGui::AlignTextToFramePadding();
     ImGui::TextUnformatted("Frequency Bands");
     
@@ -318,6 +318,33 @@ static void DrawBeatDecaySettings() {
         if (ImGui::IsItemHovered(-1)) {
             ImGui::SetTooltip("Emphasize voices and instruments in mid-range");
         }
+
+        ImGui::Separator();
+        ImGui::Text("Frequency Range:");
+        
+        float min_freq = config.frequency.minFreq;
+        if (ImGui::SliderFloat("##MinFreq", &min_freq, 10.0f, 500.0f, "%.0f Hz")) {
+            config.frequency.minFreq = min_freq;
+            // Reinitialize mapping when range changes
+            // This will be handled by the analysis system automatically
+        }
+        ImGui::SameLine();
+        ImGui::Text("Min Frequency");
+        if (ImGui::IsItemHovered(-1)) {
+            ImGui::SetTooltip("Lowest frequency to visualize (10-500 Hz)");
+        }
+        
+        float max_freq = config.frequency.maxFreq;
+        if (ImGui::SliderFloat("##MaxFreq", &max_freq, 2000.0f, 20000.0f, "%.0f Hz")) {
+            config.frequency.maxFreq = max_freq;
+            // Reinitialize mapping when range changes
+            // This will be handled by the analysis system automatically
+        }
+        ImGui::SameLine();
+        ImGui::Text("Max Frequency");
+        if (ImGui::IsItemHovered(-1)) {
+            ImGui::SetTooltip("Highest frequency to visualize (2000-20000 Hz)");
+        }
     }
     
     if (ImGui::CollapsingHeader("Visual Timing Controls", ImGuiTreeNodeFlags_DefaultOpen)) {
@@ -378,7 +405,7 @@ static void DrawSpatialization(const AudioAnalysisData& data) {
 // Helper: Draw all volume, spatialization, and beat info in a single aligned block
 static void DrawVolumeSpatializationBeat(const AudioAnalysisData& data) {
     auto& config = g_configManager.GetConfig();
-    float amp = config.frequency.amplifier;
+    float amp = config.frequency.volume_amplifier;
     // Find the widest label
     float label_width = ImGui::CalcTextSize("Pan Angle:").x;
     label_width = std::max(label_width, ImGui::CalcTextSize("Volume:").x);
@@ -553,11 +580,12 @@ static void DrawVolumeSpatializationBeat(const AudioAnalysisData& data) {
     if (ImGui::IsItemHovered(-1)) {
         ImGui::SetTooltip("Adjusts the detected pan left/right. -1 = full left, 0 = no offset, +1 = full right. Use to compensate for system or room bias.");
     }
-    // Amplifier slider (full width, aligned under Pan Smooth, with label)
-    float amplifier = config.frequency.amplifier;
-    bool amp_is_spinal = amplifier > 10.0f;
-    if (amp_is_spinal) {
-        float t = std::clamp((amplifier - 10.0f) / 1.0f, 0.0f, 1.0f);
+    
+    // Volume Amplifier slider
+    float volume_amplifier = config.frequency.volume_amplifier;
+    bool vol_amp_is_spinal = volume_amplifier > 10.0f;
+    if (vol_amp_is_spinal) {
+        float t = std::clamp((volume_amplifier - 10.0f) / 1.0f, 0.0f, 1.0f);
         ImVec4 base = ImGui::GetStyleColorVec4(ImGuiCol_SliderGrabActive);
         ImVec4 red = ImVec4(1.0f, 0.1f, 0.1f, 1.0f);
         ImVec4 lerped = ImVec4(
@@ -570,18 +598,49 @@ static void DrawVolumeSpatializationBeat(const AudioAnalysisData& data) {
         ImGui::PushStyleColor(ImGuiCol_SliderGrabActive, lerped);
     }
     ImGui::AlignTextToFramePadding();
-    ImGui::Text("Amplifier:");
+    ImGui::Text("Volume Amplifier:");
     ImGui::SameLine(bar_start_x);
     ImGui::PushItemWidth(bar_width);
-    if (ImGui::SliderFloat("##Amplifier", &amplifier, OVERLAY_AMPLIFIER_MIN, OVERLAY_AMPLIFIER_MAX, "%.2f")) {
-        config.frequency.amplifier = amplifier;
+    if (ImGui::SliderFloat("##VolumeAmplifier", &volume_amplifier, 0.1f, 10.0f, "%.2f")) {
+        config.frequency.volume_amplifier = volume_amplifier;
     }
     ImGui::PopItemWidth();
-    if (amp_is_spinal) {
+    if (vol_amp_is_spinal) {
         ImGui::PopStyleColor(2);
     }
     if (ImGui::IsItemHovered(-1)) {
-        ImGui::SetTooltip("Scales all visualization values (volume, beat, bands). Useful for low-volume systems.");
+        ImGui::SetTooltip("Controls the volume/RMS level amplification for general loudness boost");
+    }
+    
+    // Band Amplifier slider
+    float band_amplifier = config.frequency.band_amplifier;
+    bool band_amp_is_spinal = band_amplifier > 10.0f;
+    if (band_amp_is_spinal) {
+        float t = std::clamp((band_amplifier - 10.0f) / 1.0f, 0.0f, 1.0f);
+        ImVec4 base = ImGui::GetStyleColorVec4(ImGuiCol_SliderGrabActive);
+        ImVec4 red = ImVec4(1.0f, 0.1f, 0.1f, 1.0f);
+        ImVec4 lerped = ImVec4(
+            base.x * (1.0f - t) + red.x * t,
+            base.y * (1.0f - t) + red.y * t,
+            base.z * (1.0f - t) + red.z * t,
+            base.w * (1.0f - t) + red.w * t
+        );
+        ImGui::PushStyleColor(ImGuiCol_SliderGrab, lerped);
+        ImGui::PushStyleColor(ImGuiCol_SliderGrabActive, lerped);
+    }
+    ImGui::AlignTextToFramePadding();
+    ImGui::Text("Band Amplifier:");
+    ImGui::SameLine(bar_start_x);
+    ImGui::PushItemWidth(bar_width);
+    if (ImGui::SliderFloat("##BandAmplifier", &band_amplifier, 0.1f, 10.0f, "%.2f")) {
+        config.frequency.band_amplifier = band_amplifier;
+    }
+    ImGui::PopItemWidth();
+    if (band_amp_is_spinal) {
+        ImGui::PopStyleColor(2);
+    }
+    if (ImGui::IsItemHovered(-1)) {
+        ImGui::SetTooltip("Controls the frequency band visualization amplification for spectrum boost");
     }
 }
 

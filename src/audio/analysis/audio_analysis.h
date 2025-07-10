@@ -92,6 +92,10 @@ private:
     std::vector<ChannelMapping> channel_map_;
     bool mapping_initialized_ = false;
     
+    // Track frequency configuration to detect changes
+    float last_min_freq_ = 0.0f;
+    float last_max_freq_ = 0.0f;
+    
     // High-resolution FFT accumulation buffer for gap-free frequency analysis
     std::vector<float> accumulated_audio_;
     size_t accumulation_pos_ = 0;

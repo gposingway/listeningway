@@ -38,28 +38,41 @@ void AudioAnalyzer::InitializeFrequencyMapping(size_t channel_count, size_t fft_
     const float nyquist = sample_rate * 0.5f;
     const size_t half_fft_size = fft_size / 2;
 
-    // Robust 1:1 FFT bin-to-band mapping
-    // If more bands than bins, clamp channel_count to usable bins
-    size_t usable_bins = (half_fft_size > 1) ? (half_fft_size - 1) : 1;
+    // Get current configuration
+    const auto config = Listeningway::ConfigurationManager::Snapshot();
+    
+    // Use configured frequency range for musical visualization
+    const float min_freq = config.frequency.minFreq;
+    const float max_freq = config.frequency.maxFreq;
+    
+    // Calculate FFT bins corresponding to our frequency range
+    const size_t min_bin = static_cast<size_t>(min_freq * half_fft_size / nyquist);
+    const size_t max_bin = static_cast<size_t>(max_freq * half_fft_size / nyquist);
+    const size_t usable_bins = max_bin - min_bin;
+
+    // Clamp channel count if needed
     if (channel_count > usable_bins) {
         channel_count = usable_bins;
         channel_map_.resize(channel_count);
     }
 
+    // Distribute the frequency range across all bands
     size_t bins_per_channel = usable_bins / channel_count;
     size_t remainder_bins = usable_bins % channel_count;
-    size_t current_bin = 1; // Start from bin 1 (skip DC)
+    size_t current_bin = min_bin;
 
     for (size_t i = 0; i < channel_count; ++i) {
         size_t bins_for_this_channel = bins_per_channel;
         if (i < remainder_bins) {
             bins_for_this_channel += 1;
         }
+        
         channel_map_[i].fft_bins.clear();
-        for (size_t j = 0; j < bins_for_this_channel && current_bin < half_fft_size; ++j) {
+        for (size_t j = 0; j < bins_for_this_channel && current_bin <= max_bin; ++j) {
             channel_map_[i].fft_bins.push_back(current_bin);
             current_bin++;
         }
+        
         if (!channel_map_[i].fft_bins.empty()) {
             size_t first_bin = channel_map_[i].fft_bins.front();
             size_t last_bin = channel_map_[i].fft_bins.back();
@@ -179,6 +192,13 @@ void AudioAnalyzer::AnalyzeAudioBuffer(const float* data, size_t numFrames, size
         mapping_initialized_ = false; // Force remapping
     }
     
+    // Check if frequency range has changed
+    if (config.frequency.minFreq != last_min_freq_ || config.frequency.maxFreq != last_max_freq_) {
+        last_min_freq_ = config.frequency.minFreq;
+        last_max_freq_ = config.frequency.maxFreq;
+        mapping_initialized_ = false; // Force remapping with new frequency range
+    }
+    
     // Initialize frequency mapping if needed
     if (!mapping_initialized_) {
         InitializeFrequencyMapping(config.frequency.bands, config.frequency.fftSize, config.sample_rate);
@@ -195,7 +215,7 @@ void AudioAnalyzer::AnalyzeAudioBuffer(const float* data, size_t numFrames, size
     float raw_volume = std::sqrt(sum_squares / (numFrames * numChannels));
     
     // Apply artistic curve for better visual dynamics (slight compression + boost)
-    out.volume = std::pow(raw_volume, 0.7f) * config.frequency.amplifier;
+    out.volume = std::pow(raw_volume, 0.7f) * config.frequency.volume_amplifier;
     out.volume = std::min(1.0f, out.volume);
     
     // 2. Enhanced stereo analysis for creative effects
@@ -333,6 +353,8 @@ void AudioAnalyzer::AnalyzeAudioBuffer(const float* data, size_t numFrames, size
             out.freq_bands[ch] = out._prev_freq_bands[ch] * config.frequency.smooth_fade;
         }
         
+        // Apply band amplifier for final boost control
+        out.freq_bands[ch] *= config.frequency.band_amplifier;
         out.freq_bands[ch] = std::clamp(out.freq_bands[ch], 0.0f, 1.0f);
     }
     
