@@ -6,6 +6,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
+- Added: Directional intensity uniforms (Listeningway_Direction8 and FRBL aliases) with mono/stereo/surround mapping, plus overlay rose diagram.
+- Added: Split Amplifier controls (Volume/Bands/Direction) with distinct UI colors; boosts apply to uniforms and overlay visuals only.
 
 ### Fixed
 - Resolved freezes when switching Audio Analysis provider from System → Off → System.

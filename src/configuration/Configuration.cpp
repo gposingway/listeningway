@@ -58,7 +58,10 @@ bool Configuration::Validate() {
         band = std::clamp(band, 0.0f, 4.0f);
     }
     frequency.equalizerWidth = std::clamp(frequency.equalizerWidth, 0.05f, 0.5f);
-    frequency.amplifier = std::clamp(frequency.amplifier, 1.0f, 11.0f);
+    frequency.amplifier = std::clamp(frequency.amplifier, OVERLAY_AMPLIFIER_MIN, OVERLAY_AMPLIFIER_MAX);
+    frequency.amplifierVolume = std::clamp(frequency.amplifierVolume, OVERLAY_AMPLIFIER_MIN, OVERLAY_AMPLIFIER_MAX);
+    frequency.amplifierBands = std::clamp(frequency.amplifierBands, OVERLAY_AMPLIFIER_MIN, OVERLAY_AMPLIFIER_MAX);
+    frequency.amplifierDirection = std::clamp(frequency.amplifierDirection, OVERLAY_AMPLIFIER_MIN, OVERLAY_AMPLIFIER_MAX);
     
     // Ensure min < max for frequency ranges
     if (frequency.minFreq >= frequency.maxFreq) {
@@ -141,8 +144,12 @@ bool Configuration::SaveToJson(const std::string& filepath) const {
             if (i < frequency.equalizerBands.size() - 1) file << ", ";
         }
         file << "],\n";
-        file << "    \"equalizerWidth\": " << frequency.equalizerWidth << ",\n";
-        file << "    \"amplifier\": " << frequency.amplifier << ",\n";
+    file << "    \"equalizerWidth\": " << frequency.equalizerWidth << ",\n";
+    // Write both legacy and new split amplifiers
+    file << "    \"amplifier\": " << frequency.amplifier << ",\n";
+    file << "    \"amplifierVolume\": " << frequency.amplifierVolume << ",\n";
+    file << "    \"amplifierBands\": " << frequency.amplifierBands << ",\n";
+    file << "    \"amplifierDirection\": " << frequency.amplifierDirection << ",\n";
         // Serialize new members
         file << "    \"bands\": " << frequency.bands << ",\n";
         file << "    \"fftSize\": " << frequency.fftSize << ",\n";
@@ -307,6 +314,18 @@ bool Configuration::LoadFromJson(const std::string& filepath) {
         
         value = getValue("amplifier");
         if (!value.empty()) frequency.amplifier = std::stof(value);
+        value = getValue("amplifierVolume");
+        if (!value.empty()) frequency.amplifierVolume = std::stof(value);
+        value = getValue("amplifierBands");
+        if (!value.empty()) frequency.amplifierBands = std::stof(value);
+        value = getValue("amplifierDirection");
+        if (!value.empty()) frequency.amplifierDirection = std::stof(value);
+        // Back-compat: if new fields were missing, initialize from legacy amplifier
+        if (frequency.amplifierVolume == DEFAULT_AMPLIFIER && frequency.amplifierBands == DEFAULT_AMPLIFIER && frequency.amplifierDirection == DEFAULT_AMPLIFIER && !getValue("amplifier").empty()) {
+            frequency.amplifierVolume = frequency.amplifier;
+            frequency.amplifierBands = frequency.amplifier;
+            frequency.amplifierDirection = frequency.amplifier;
+        }
         
         // Parse new members
         value = getValue("bands");

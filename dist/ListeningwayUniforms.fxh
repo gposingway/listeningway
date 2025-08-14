@@ -32,3 +32,15 @@ uniform float Listeningway_AudioPan < source = "listeningway_audiopan"; >;
 
 // Audio format uniform (0=none, 1=mono, 2=stereo, 6=5.1, 8=7.1)
 uniform float Listeningway_AudioFormat < source = "listeningway_audioformat"; >;
+
+// Directional intensity uniforms (8-bucket rose): [Front, FR, Right, BR, Back, BL, Left, FL]
+uniform float Listeningway_Direction8[8] < source = "listeningway_direction8"; >;
+// Named aliases for convenience
+uniform float Listeningway_Front < source = "listeningway_front"; >;
+uniform float Listeningway_FrontRight < source = "listeningway_front_right"; >;
+uniform float Listeningway_Right < source = "listeningway_right"; >;
+uniform float Listeningway_BackRight < source = "listeningway_back_right"; >;
+uniform float Listeningway_Back < source = "listeningway_back"; >;
+uniform float Listeningway_BackLeft < source = "listeningway_back_left"; >;
+uniform float Listeningway_Left < source = "listeningway_left"; >;
+uniform float Listeningway_FrontLeft < source = "listeningway_front_left"; >;

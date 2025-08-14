@@ -127,6 +127,29 @@ static void DrawToggles() {
     }
 }
 
+// Helper: unified amplifier slider styling (distinct from regular controls)
+// Returns true if the value changed
+static bool DrawAmplifierSlider(const char* id, float& value) {
+    // Accent color (consistent across all amplifiers) and red "Spinal Tap" override when > 10
+    const ImVec4 accent = ImVec4(0.47f, 0.74f, 1.00f, 1.00f); // light teal/blue
+    const ImVec4 red    = ImVec4(1.00f, 0.10f, 0.10f, 1.00f);
+    float t = 0.0f;
+    if (value > 10.0f) {
+        t = std::clamp((value - 10.0f) / 1.0f, 0.0f, 1.0f);
+    }
+    ImVec4 grab = ImVec4(
+        accent.x * (1.0f - t) + red.x * t,
+        accent.y * (1.0f - t) + red.y * t,
+        accent.z * (1.0f - t) + red.z * t,
+        accent.w * (1.0f - t) + red.w * t
+    );
+    ImGui::PushStyleColor(ImGuiCol_SliderGrab, grab);
+    ImGui::PushStyleColor(ImGuiCol_SliderGrabActive, grab);
+    bool changed = ImGui::SliderFloat(id, &value, OVERLAY_AMPLIFIER_MIN, OVERLAY_AMPLIFIER_MAX, "%.2f");
+    ImGui::PopStyleColor(2);
+    return changed;
+}
+
 // Helper: Draw log file info
 static void DrawLogInfo() {
     if (g_listeningway_debug_enabled) {
@@ -150,30 +173,12 @@ static void DrawWebsite() {
     ImGui::SetCursorPosY(ImGui::GetCursorPosY() + 4);
 }
 
-// Helper: Draw volume meter
-static void DrawVolume(const AudioAnalysisData& data) {
-    auto& config = g_configManager.GetConfig();
-    float amp = config.frequency.amplifier;
-    ImGui::AlignTextToFramePadding();
-    ImGui::Text("Volume:");
-    ImGui::SameLine();
-    ImGui::ProgressBar(std::clamp(data.volume * amp, 0.0f, 1.0f), ImVec2(ImGui::GetContentRegionAvail().x, 0.0f));
-}
-
-// Helper: Draw beat meter
-static void DrawBeat(const AudioAnalysisData& data) {
-    auto& config = g_configManager.GetConfig();
-    float amp = config.frequency.amplifier;
-    ImGui::AlignTextToFramePadding();
-    ImGui::Text("Beat:");
-    ImGui::SameLine();
-    ImGui::ProgressBar(std::clamp(data.beat * amp, 0.0f, 1.0f), ImVec2(ImGui::GetContentRegionAvail().x, 0.0f));
-}
+// (Removed old standalone DrawVolume/DrawBeat helpers; visuals now live in grouped sections)
 
 // Helper: Draw frequency bands with view mode
 static void DrawFrequencyBands(const AudioAnalysisData& data) {
     auto& config = g_configManager.GetConfig();
-    float amp = config.frequency.amplifier;
+    float amp = config.frequency.amplifierBands;
     ImGui::AlignTextToFramePadding();
     ImGui::TextUnformatted("Frequency Bands");
     
@@ -217,6 +222,111 @@ static void DrawFrequencyBands(const AudioAnalysisData& data) {
     }
     ImGui::Dummy(ImVec2(0, totalHeight)); // Reserve space for our custom drawing
     ImGui::EndChild();
+    // Bands Boost (below display) with label
+    {
+        float amplifierBands = config.frequency.amplifierBands;
+        ImGui::AlignTextToFramePadding();
+        ImGui::Text("Bands Boost:");
+        ImGui::SameLine();
+        ImGui::PushItemWidth(ImGui::GetContentRegionAvail().x);
+        if (DrawAmplifierSlider("##AmplifierBands", amplifierBands)) {
+            config.frequency.amplifierBands = amplifierBands;
+        }
+        ImGui::PopItemWidth();
+        if (ImGui::IsItemHovered(-1)) {
+            ImGui::SetTooltip("Visual multiplier for frequency bands (uniforms too)");
+        }
+    }
+}
+
+// Forward declaration for controls section used below
+static void DrawFrequencyBoostSettings();
+
+// Helper: Draw Frequency Bands related controls (mapping + equalizer)
+static void DrawFrequencyRelatedControls() {
+    auto& config = g_configManager.GetConfig();
+    ImGui::Text("Frequency Band Mapping:");
+    bool band_log_scale = config.frequency.logScaleEnabled;
+    if (ImGui::Checkbox("Logarithmic Bands", &band_log_scale)) {
+        config.frequency.logScaleEnabled = band_log_scale;
+    }
+    if (ImGui::IsItemHovered(-1)) {
+        ImGui::SetTooltip("Log scale better matches hearing; linear is legacy");
+    }
+    if (config.frequency.logScaleEnabled) {
+        float band_log_strength = config.frequency.logStrength;
+        if (ImGui::SliderFloat("##LogStrength", &band_log_strength, OVERLAY_LOG_STRENGTH_MIN, OVERLAY_LOG_STRENGTH_MAX, "%.2f")) {
+            config.frequency.logStrength = band_log_strength;
+        }
+        ImGui::SameLine();
+        ImGui::Text("Log Strength");
+        if (ImGui::IsItemHovered(-1)) {
+            ImGui::SetTooltip("Controls bass detail in logarithmic scale");
+        }
+        float band_min_freq = config.frequency.minFreq;
+        if (ImGui::SliderFloat("##MinFreq", &band_min_freq, OVERLAY_MIN_FREQ_MIN, OVERLAY_MIN_FREQ_MAX, "%.0f")) {
+            config.frequency.minFreq = band_min_freq;
+        }
+        ImGui::SameLine();
+        ImGui::Text("Min Freq (Hz)");
+        if (ImGui::IsItemHovered(-1)) {
+            ImGui::SetTooltip("Minimum frequency for frequency bands");
+        }
+        float band_max_freq = config.frequency.maxFreq;
+        if (ImGui::SliderFloat("##MaxFreq", &band_max_freq, OVERLAY_MAX_FREQ_MIN, OVERLAY_MAX_FREQ_MAX, "%.0f")) {
+            config.frequency.maxFreq = band_max_freq;
+        }
+        ImGui::SameLine();
+        ImGui::Text("Max Freq (Hz)");
+        if (ImGui::IsItemHovered(-1)) {
+            ImGui::SetTooltip("Maximum frequency for frequency bands");
+        }
+    }
+    // Equalizer and width
+    DrawFrequencyBoostSettings();
+}
+
+// Helper: Draw 8-direction rose diagram for directional intensity
+static void DrawDirectionRose(const AudioAnalysisData& data) {
+    auto& config = g_configManager.GetConfig();
+    ImGui::TextUnformatted("Directional Intensity (Rose)");
+    // Size of the rose area
+    float size = std::min(ImGui::GetContentRegionAvail().x, 140.0f);
+    ImVec2 start = ImGui::GetCursorScreenPos();
+    ImVec2 center = ImVec2(start.x + size * 0.6f, start.y + size * 0.6f);
+    float radius = size * 0.5f;
+    auto* dl = ImGui::GetWindowDrawList();
+    // Background circle
+    dl->AddCircleFilled(center, radius, IM_COL32(30,30,30,128), 64);
+    dl->AddCircle(center, radius, OVERLAY_BAR_COLOR_OUTLINE, 64, 1.0f);
+    // Draw 8 petals
+    // Order: F, FR, R, BR, B, BL, L, FL corresponding to angles 0,45,90,...,315 degrees
+    const float two_pi = 6.2831853f;
+    for (int i = 0; i < 8; ++i) {
+        float v = std::clamp(data.direction8[i], 0.0f, 1.0f);
+        float a0 = (two_pi / 8.0f) * (i - 0.5f);
+        float a1 = (two_pi / 8.0f) * (i + 0.5f);
+        float r = radius * v;
+        ImVec2 p0(center.x + r * cosf(a0), center.y + r * sinf(a0));
+        ImVec2 p1(center.x + r * cosf(a1), center.y + r * sinf(a1));
+        // Triangle from center to arc segment
+        ImU32 col = ImGui::GetColorU32(ImGuiCol_PlotHistogram);
+        dl->AddTriangleFilled(center, p0, p1, col);
+    }
+    ImGui::Dummy(ImVec2(size * 1.2f, size * 1.2f));
+    // Direction Boost (below display) with label
+    float amplifierDir = config.frequency.amplifierDirection;
+    ImGui::AlignTextToFramePadding();
+    ImGui::Text("Direction Boost:");
+    ImGui::SameLine();
+    ImGui::PushItemWidth(ImGui::GetContentRegionAvail().x);
+    if (DrawAmplifierSlider("##AmplifierDirection", amplifierDir)) {
+        config.frequency.amplifierDirection = amplifierDir;
+    }
+    ImGui::PopItemWidth();
+    if (ImGui::IsItemHovered(-1)) {
+        ImGui::SetTooltip("Boosts directional intensity uniforms; visual-only multiplier");
+    }
 }
 
 // Helper: Draw time/phase info
@@ -344,7 +454,9 @@ static void DrawSpatialization(const AudioAnalysisData& data) {
 // Helper: Draw all volume, spatialization, and beat info in a single aligned block
 static void DrawVolumeSpatializationBeat(const AudioAnalysisData& data) {
     auto& config = g_configManager.GetConfig();
-    float amp = config.frequency.amplifier;
+    // Use per-metric amplifiers for visuals
+    float amp = config.frequency.amplifierVolume;
+    float band_amp = config.frequency.amplifierBands;
     // Find the widest label
     float label_width = ImGui::CalcTextSize("Pan Angle:").x;
     label_width = std::max(label_width, ImGui::CalcTextSize("Volume:").x);
@@ -364,6 +476,23 @@ static void DrawVolumeSpatializationBeat(const AudioAnalysisData& data) {
     ImGui::ProgressBar(std::clamp(data.volume * amp, 0.0f, 1.0f), ImVec2(bar_width, 0.0f));
     ImGui::SameLine();
     ImGui::Text("%.2f", data.volume * amp);    // Compact Left/Right display under the main volume bar
+    // Volume Boost (below display) with label
+    {
+        float amplifierVol = config.frequency.amplifierVolume;
+        ImGui::Dummy(ImVec2(0, OVERLAY_BAR_SPACING_SMALL));
+        ImGui::PushItemWidth(bar_width);
+        // Align with bars
+        ImGui::AlignTextToFramePadding();
+        ImGui::Text("Volume Boost:");
+        ImGui::SameLine(bar_start_x);
+        if (DrawAmplifierSlider("##AmplifierVolume", amplifierVol)) {
+            config.frequency.amplifierVolume = amplifierVol;
+        }
+        ImGui::PopItemWidth();
+        if (ImGui::IsItemHovered(-1)) {
+            ImGui::SetTooltip("Boosts overall and L/R volume uniforms; visual-only multiplier");
+        }
+    }
     const float thin_bar_height = OVERLAY_BAR_HEIGHT_THIN;  // Same height as frequency bands
     const float small_spacing = OVERLAY_BAR_SPACING_SMALL;    // Small gap between left and right bars
     const float half_bar_width = (bar_width - small_spacing) * 0.5f;
@@ -481,74 +610,47 @@ static void DrawVolumeSpatializationBeat(const AudioAnalysisData& data) {
     
     // Add spacing after the pan bar (same as other bars)
     ImGui::Dummy(ImVec2(0, OVERLAY_BAR_SPACING_LARGE));
-    // Beat
-    ImGui::AlignTextToFramePadding();
-    ImGui::Text("Beat:");
-    ImGui::SameLine(bar_start_x);
-    ImGui::ProgressBar(data.beat, ImVec2(bar_width, 0.0f));
-    ImGui::SameLine();
-    ImGui::Text("%.2f", data.beat * amp);    // Audio Format
-    ImGui::AlignTextToFramePadding();
-    ImGui::Text("Format:");
-    ImGui::SameLine(bar_start_x);
-    AudioFormat format = AudioFormatUtils::IntToFormat(static_cast<int>(data.audio_format));
-    const char* format_name = AudioFormatUtils::FormatToString(format);
-    ImGui::Text("%s (%.0f)", format_name, data.audio_format);// Pan Smoothing
+    // Pan smoothing and offset (placed near pan visualization)
+    auto& config_ref = g_configManager.GetConfig();
     ImGui::AlignTextToFramePadding();
     ImGui::Text("Pan Smooth:");
     ImGui::SameLine(bar_start_x);
-    float pan_smoothing = config.audio.panSmoothing;
+    float pan_smoothing = config_ref.audio.panSmoothing;
     ImGui::PushItemWidth(bar_width);
     if (ImGui::SliderFloat("##PanSmoothing", &pan_smoothing, 0.0f, 1.0f, "%.2f")) {
-        config.audio.panSmoothing = pan_smoothing;
+        config_ref.audio.panSmoothing = pan_smoothing;
     }
     ImGui::PopItemWidth();
     if (ImGui::IsItemHovered(-1)) {
-        ImGui::SetTooltip("Reduces pan jitter. 0.0 = no smoothing (current behavior), higher values = more smoothing");
+        ImGui::SetTooltip("Reduces pan jitter. 0.0 = no smoothing, higher values = more smoothing");
     }
-    // Pan Offset slider (full width, under Pan Smoothing)
-    float pan_offset = config.audio.panOffset;
+    float pan_offset = config_ref.audio.panOffset;
     ImGui::AlignTextToFramePadding();
     ImGui::Text("Pan Offset:");
     ImGui::SameLine(bar_start_x);
     ImGui::PushItemWidth(bar_width);
     if (ImGui::SliderFloat("##PanOffset", &pan_offset, OVERLAY_PAN_OFFSET_MIN, OVERLAY_PAN_OFFSET_MAX, "%.2f")) {
-        config.audio.panOffset = pan_offset;
+        config_ref.audio.panOffset = pan_offset;
     }
     ImGui::PopItemWidth();
     if (ImGui::IsItemHovered(-1)) {
-        ImGui::SetTooltip("Adjusts the detected pan left/right. -1 = full left, 0 = no offset, +1 = full right. Use to compensate for system or room bias.");
+        ImGui::SetTooltip("Adjusts detected pan left/right (-1..+1)");
     }
-    // Amplifier slider (full width, aligned under Pan Smooth, with label)
-    float amplifier = config.frequency.amplifier;
-    bool amp_is_spinal = amplifier > 10.0f;
-    if (amp_is_spinal) {
-        float t = std::clamp((amplifier - 10.0f) / 1.0f, 0.0f, 1.0f);
-        ImVec4 base = ImGui::GetStyleColorVec4(ImGuiCol_SliderGrabActive);
-        ImVec4 red = ImVec4(1.0f, 0.1f, 0.1f, 1.0f);
-        ImVec4 lerped = ImVec4(
-            base.x * (1.0f - t) + red.x * t,
-            base.y * (1.0f - t) + red.y * t,
-            base.z * (1.0f - t) + red.z * t,
-            base.w * (1.0f - t) + red.w * t
-        );
-        ImGui::PushStyleColor(ImGuiCol_SliderGrab, lerped);
-        ImGui::PushStyleColor(ImGuiCol_SliderGrabActive, lerped);
-    }
+    ImGui::Dummy(ImVec2(0, OVERLAY_BAR_SPACING_LARGE));
+    // Beat
     ImGui::AlignTextToFramePadding();
-    ImGui::Text("Amplifier:");
+    ImGui::Text("Beat:");
     ImGui::SameLine(bar_start_x);
-    ImGui::PushItemWidth(bar_width);
-    if (ImGui::SliderFloat("##Amplifier", &amplifier, OVERLAY_AMPLIFIER_MIN, OVERLAY_AMPLIFIER_MAX, "%.2f")) {
-        config.frequency.amplifier = amplifier;
-    }
-    ImGui::PopItemWidth();
-    if (amp_is_spinal) {
-        ImGui::PopStyleColor(2);
-    }
-    if (ImGui::IsItemHovered(-1)) {
-        ImGui::SetTooltip("Scales all visualization values (volume, beat, bands). Useful for low-volume systems.");
-    }
+    ImGui::ProgressBar(std::clamp(data.beat, 0.0f, 1.0f), ImVec2(bar_width, 0.0f));
+    ImGui::SameLine();
+    ImGui::Text("%.2f", data.beat);
+    // Show Audio Format inline in overview for reference
+    ImGui::AlignTextToFramePadding();
+    ImGui::Text("Format:");
+    ImGui::SameLine(bar_start_x);
+    AudioFormat format = AudioFormatUtils::IntToFormat(static_cast<int>(data.audio_format));
+    const char* format_name = AudioFormatUtils::FormatToString(format);
+    ImGui::Text("%s (%.0f)", format_name, data.audio_format);
 }
 
 // Draws the Listeningway debug overlay using ImGui.
@@ -557,125 +659,75 @@ void DrawListeningwayDebugOverlay(const AudioAnalysisData& data) {
     try {
         ImGui::GetIO().UserData = (void*)&data;
         LOCK_AUDIO_DATA();
-        DrawToggles();
-        DrawLogInfo();
-        ImGui::Separator();
-        DrawWebsite();
-        ImGui::Separator();        DrawVolumeSpatializationBeat(data);
-        ImGui::Separator();
-        DrawFrequencyBands(data);
-        ImGui::Separator();
-        DrawTimePhaseInfo();
-        ImGui::Separator();
-        
-        // Beat Settings (profiles + custom)
-        if (DrawBeatSettingsPanel(data, g_configManager)) {
-            LOG_DEBUG("[Overlay] Beat settings changed");
+    // Collapsing headers persist via ImGui .ini automatically; set defaults on first use only
+        // Single-page, logically grouped layout with collapsible sections
+    ImGui::SetNextItemOpen(true, ImGuiCond_FirstUseEver);
+    if (ImGui::CollapsingHeader("System & Links", ImGuiTreeNodeFlags_DefaultOpen)) {
+            DrawToggles();
+            DrawLogInfo();
+            DrawWebsite();
         }
-        ImGui::Separator();        ImGui::Text("Frequency Band Mapping:");
-        auto& config = g_configManager.GetConfig();
-        bool band_log_scale = config.frequency.logScaleEnabled;
-        if (ImGui::Checkbox("Logarithmic Bands", &band_log_scale)) {
-            config.frequency.logScaleEnabled = band_log_scale;
-        }
-        if (ImGui::IsItemHovered(-1)) {
-            ImGui::SetTooltip("Log scale better matches hearing; linear is legacy");
-        }
-        
-        // Display log-specific settings only when log scale is enabled
-        if (config.frequency.logScaleEnabled) {
-            float band_log_strength = config.frequency.logStrength;
-            if (ImGui::SliderFloat("##LogStrength", &band_log_strength, OVERLAY_LOG_STRENGTH_MIN, OVERLAY_LOG_STRENGTH_MAX, "%.2f")) {
-                config.frequency.logStrength = band_log_strength;
-            }
-            ImGui::SameLine();
-            ImGui::Text("Log Strength");
-            if (ImGui::IsItemHovered(-1)) {
-                ImGui::SetTooltip("Controls bass detail in logarithmic scale");
-            }
-        
-            float band_min_freq = config.frequency.minFreq;
-            if (ImGui::SliderFloat("##MinFreq", &band_min_freq, OVERLAY_MIN_FREQ_MIN, OVERLAY_MIN_FREQ_MAX, "%.0f")) {
-                config.frequency.minFreq = band_min_freq;
-            }
-            ImGui::SameLine();
-            ImGui::Text("Min Freq (Hz)");
-            if (ImGui::IsItemHovered(-1)) {
-                ImGui::SetTooltip("Minimum frequency for frequency bands");
-            }
-            
-            float band_max_freq = config.frequency.maxFreq;
-            if (ImGui::SliderFloat("##MaxFreq", &band_max_freq, OVERLAY_MAX_FREQ_MIN, OVERLAY_MAX_FREQ_MAX, "%.0f")) {
-                config.frequency.maxFreq = band_max_freq;
-            }
-            ImGui::SameLine();
-            ImGui::Text("Max Freq (Hz)");
-            if (ImGui::IsItemHovered(-1)) {
-                ImGui::SetTooltip("Maximum frequency for frequency bands");
-            }
+        ImGui::Separator();
 
+    ImGui::SetNextItemOpen(true, ImGuiCond_FirstUseEver);
+    if (ImGui::CollapsingHeader("Levels & Beat", ImGuiTreeNodeFlags_DefaultOpen)) {
+            // Levels: Volume + L/R + Pan (with smoothing/offset) and Beat
+            DrawVolumeSpatializationBeat(data);
+            // Beat settings directly after Beat visual
+            if (DrawBeatSettingsPanel(data, g_configManager)) {
+                LOG_DEBUG("[Overlay] Beat settings changed");
+            }
         }
-
-        
-        // 5-band equalizer settings
-        DrawFrequencyBoostSettings();
-    // (Beat algorithm settings handled by DrawBeatSettingsPanel)
-        
-        float flux_low_alpha = config.beat.fluxLowAlpha;
-        if (ImGui::SliderFloat("##LowFluxSmoothing", &flux_low_alpha, OVERLAY_FLUX_SMOOTH_MIN, OVERLAY_FLUX_SMOOTH_MAX, "%.3f")) {
-            config.beat.fluxLowAlpha = flux_low_alpha;
-        }
-        ImGui::SameLine();
-        ImGui::Text("Low Flux Smoothing");
-        if (ImGui::IsItemHovered(-1)) {
-            ImGui::SetTooltip("Lower value = smoother, higher = more responsive");
-        }
-        
-        float flux_low_threshold_multiplier = config.beat.fluxLowThresholdMultiplier;
-        if (ImGui::SliderFloat("##LowFluxThreshold", &flux_low_threshold_multiplier, OVERLAY_FLUX_THRESH_MIN, OVERLAY_FLUX_THRESH_MAX, "%.2f")) {
-            config.beat.fluxLowThresholdMultiplier = flux_low_threshold_multiplier;
-        }
-        ImGui::SameLine();
-        ImGui::Text("Low Flux Threshold");
-        if (ImGui::IsItemHovered(-1)) {
-            ImGui::SetTooltip("Lower value = more sensitive, higher = less false positives");
-        }
-        
         ImGui::Separator();
-          // Consolidated buttons for Save, Load and Default
-        ImGui::Text("Settings Management:");
-        
-        // Use columns to position the buttons side by side with equal width
-        ImGui::Columns(3, "settings_buttons", false);
-        // Save button
-        if (ImGui::Button("Save Settings", ImVec2(-1, 0))) {
-            if (g_configManager.Save()) {
-                LOG_DEBUG("[Overlay] Settings saved to file");
-            } else {
-                LOG_ERROR("[Overlay] Failed to save settings to file");
+
+    ImGui::SetNextItemOpen(true, ImGuiCond_FirstUseEver);
+    if (ImGui::CollapsingHeader("Frequency Bands", ImGuiTreeNodeFlags_DefaultOpen)) {
+            // Frequency Bands block: Bands, mapping, equalizer
+            DrawFrequencyBands(data);
+            DrawFrequencyRelatedControls();
+        }
+        ImGui::Separator();
+
+    ImGui::SetNextItemOpen(true, ImGuiCond_FirstUseEver);
+    if (ImGui::CollapsingHeader("Directional Intensity", ImGuiTreeNodeFlags_DefaultOpen)) {
+            // Direction block
+            DrawDirectionRose(data);
+        }
+        ImGui::Separator();
+
+    ImGui::SetNextItemOpen(true, ImGuiCond_FirstUseEver);
+    if (ImGui::CollapsingHeader("Time & Phase", ImGuiTreeNodeFlags_DefaultOpen)) {
+            // System/time
+            DrawTimePhaseInfo();
+        }
+        ImGui::Separator();
+
+    ImGui::SetNextItemOpen(true, ImGuiCond_FirstUseEver);
+    if (ImGui::CollapsingHeader("Settings Management", ImGuiTreeNodeFlags_DefaultOpen)) {
+            ImGui::Text("Settings Management:");
+            ImGui::Columns(3, "settings_buttons", false);
+            if (ImGui::Button("Save Settings", ImVec2(-1, 0))) {
+                if (g_configManager.Save()) {
+                    LOG_DEBUG("[Overlay] Settings saved to file");
+                } else {
+                    LOG_ERROR("[Overlay] Failed to save settings to file");
+                }
             }
-        }
-        ImGui::NextColumn();
-        // Load button
-        if (ImGui::Button("Load Settings", ImVec2(-1, 0))) {
-            if (g_configManager.Load()) {
-                LOG_DEBUG("[Overlay] Settings loaded from file");
-                // No longer re-apply config here; ConfigurationManager handles it
-            } else {
-                LOG_ERROR("[Overlay] Failed to load settings to file");
+            ImGui::NextColumn();
+            if (ImGui::Button("Load Settings", ImVec2(-1, 0))) {
+                if (g_configManager.Load()) {
+                    LOG_DEBUG("[Overlay] Settings loaded from file");
+                } else {
+                    LOG_ERROR("[Overlay] Failed to load settings to file");
+                }
             }
+            ImGui::NextColumn();
+            if (ImGui::Button("Reset to Default", ImVec2(-1, 0))) {
+                g_configManager.ResetToDefaults();
+                LOG_DEBUG("[Overlay] Settings reset to default values");
+            }
+            ImGui::Columns(1);
         }
-        ImGui::NextColumn();
-        // Default button
-        if (ImGui::Button("Reset to Default", ImVec2(-1, 0))) {
-            g_configManager.ResetToDefaults();
-            LOG_DEBUG("[Overlay] Settings reset to default values");
-            // No longer re-apply config here; ConfigurationManager handles it
-        }
-        
-        // Reset columns
-        ImGui::Columns(1);
-        
         ImGui::Separator();
     } catch (const std::exception& ex) {
         LOG_ERROR(std::string("[Overlay] Exception in DrawListeningwayDebugOverlay: ") + ex.what());

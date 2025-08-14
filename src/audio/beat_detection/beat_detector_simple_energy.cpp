@@ -2,11 +2,10 @@
 #include <algorithm>
 
 void BeatDetectorSimpleEnergy::Process(const std::vector<float>& magnitudes, float flux_avg, float flux_low_avg, float dt) {
-    // Use low-band flux as a proxy for bass beats
-    float target = std::clamp(flux_low_avg * 5.0f, 0.0f, 1.0f);
-    // Simple attack/decay
-    if (target > result_.beat) {
-        result_.beat += (target - result_.beat) * 0.6f; // fast attack
+    // Use low-band flux as a proxy: if above dynamic threshold, trigger beat
+    float threshold = 0.12f; // heuristic
+    if (flux_low_avg > threshold) {
+        result_.beat = 1.0f; // impulse on detection
     } else {
         result_.beat = std::max(0.0f, result_.beat - decay_ * dt); // decay over time
     }

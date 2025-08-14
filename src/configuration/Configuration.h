@@ -54,7 +54,12 @@ struct Configuration {
         float maxFreq = DEFAULT_BAND_MAX_FREQ;
         std::array<float, 5> equalizerBands = { DEFAULT_EQUALIZER_BAND1, DEFAULT_EQUALIZER_BAND2, DEFAULT_EQUALIZER_BAND3, DEFAULT_EQUALIZER_BAND4, DEFAULT_EQUALIZER_BAND5 };
         float equalizerWidth = DEFAULT_EQUALIZER_WIDTH;
-        float amplifier = DEFAULT_AMPLIFIER;
+    // Legacy global amplifier (kept for backward compatibility on load/save)
+    float amplifier = DEFAULT_AMPLIFIER;
+    // New: separate amplifiers for UI/uniform boosting (do not affect analysis)
+    float amplifierVolume = DEFAULT_AMPLIFIER;
+    float amplifierBands = DEFAULT_AMPLIFIER;
+    float amplifierDirection = DEFAULT_AMPLIFIER;
         size_t bands = DEFAULT_NUM_BANDS;
         size_t fftSize = DEFAULT_FFT_SIZE;
         float bandNorm = DEFAULT_BAND_NORM;

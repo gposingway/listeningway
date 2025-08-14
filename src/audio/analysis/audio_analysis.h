@@ -1,5 +1,6 @@
 #pragma once
 #include <vector>
+#include <array>
 #include <cstddef>
 #include <memory>
 #include <mutex>
@@ -15,6 +16,10 @@ struct AudioAnalysisData {
     std::vector<float> freq_bands;      // Normalized frequency bands (with equalizer)
     std::vector<float> raw_freq_bands;  // Raw frequency bands (without equalizer)
     float beat = 0.0f;                 // Beat detection value [0,1]
+    
+    // 8-direction intensity (Front, Front-Right, Right, Back-Right, Back, Back-Left, Left, Front-Left)
+    // Values are normalized [0,1] and represent spatial energy distribution per frame
+    std::array<float, 8> direction8 {0,0,0,0,0,0,0,0};
     
     // Beat detection info
     float tempo_bpm = 0.0f;            // Detected tempo in BPM

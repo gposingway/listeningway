@@ -55,7 +55,10 @@ Let's add audio reactivity to your existing ReShade presets or try out effects d
 **Tuning (Optional):**
 
 * For most users, the default settings work great! If you want to fine-tune the audio analysis (like how sensitive beat detection is), you can use the built-in overlay UI (accessible through the ReShade menu) or edit the `Listeningway.json` file located in the same directory as the .addon file. More details on this in the section for developers below.
-* The overlay UI features an **Amplifier** slider. This multiplies all overlay visualizations and Listeningway_* uniforms (volume, beat, frequency bands, left/right volume) for enhanced visual feedback, but does not affect the underlying audio analysis.
+* The overlay UI features separate boost sliders for enhanced visual feedback (they do not affect underlying analysis):
+  - Volume Boost: scales overall volume and L/R uniforms.
+  - Bands Boost: scales frequency bands and beat uniforms.
+  - Direction Boost: scales directional intensity uniforms.
 
 <div align="center">
 
@@ -215,6 +218,17 @@ Here's the data Listeningway provides:
   <tr>
     <td colspan="3"><code>uniform float Listeningway_AudioFormat &lt; source="listeningway_audioformat"; &gt;;</code><br/><br/></td>
   </tr>
+  <tr>
+    <td><strong>Listeningway_Direction8</strong></td>
+    <td>8-direction intensity rose: [Front, FrontRight, Right, BackRight, Back, BackLeft, Left, FrontLeft]. Combines mono/stereo/surround mapping with sensible defaults.</td>
+    <td>0.0 to 1.0 (per direction)</td>
+  </tr>
+  <tr>
+    <td colspan="3"><code>uniform float Listeningway_Direction8[8] &lt; source="listeningway_direction8"; &gt;;</code><br/>
+    Named aliases also available:<br/>
+    <code>Listeningway_Front</code>, <code>Listeningway_FrontRight</code>, <code>Listeningway_Right</code>, <code>Listeningway_BackRight</code>, <code>Listeningway_Back</code>, <code>Listeningway_BackLeft</code>, <code>Listeningway_Left</code>, <code>Listeningway_FrontLeft</code>
+    </td>
+  </tr>
 </table>
 
 **Tip:** For convenience, you can `#include "ListeningwayUniforms.fxh"` which contains all these declarations ready to use.
@@ -233,12 +247,17 @@ float4 PS_MyAudioReactiveEffect(float4 pos : SV_Position, float2 uv : TEXCOORD) 
     float overall_volume = Listeningway_Volume * 0.5;        // Overall volume
     float beat_flash = Listeningway_Beat * 1.0;              // Beat flash effect
     
+  // New: directional rose usage (e.g., front-focused brightness)
+  float dir_front = Listeningway_Front;
+  float dir_right = Listeningway_Right;
+  float dir_left  = Listeningway_Left;
+    
     // NEW: Use stereo information for spatial effects
     float left_volume = Listeningway_VolumeLeft;
     float right_volume = Listeningway_VolumeRight;
     float pan_position = Listeningway_AudioPan; // -1.0 (left) to +1.0 (right)
     
-    // Create a stereo-aware color effect
+  // Create a stereo/directional-aware color effect
     float3 color = tex2D(ReShade::BackBuffer, uv).rgb;
     
     // Apply different colors based on stereo pan
@@ -253,8 +272,9 @@ float4 PS_MyAudioReactiveEffect(float4 pos : SV_Position, float2 uv : TEXCOORD) 
         color = lerp(color, float3(0.2, 1.0, 0.4), overall_volume * 0.3);
     }
     
-    // Add beat flash that respects stereo positioning
-    float beat_contribution = beat_flash * (0.5 + abs(pan_position) * 0.5);
+  // Add beat flash that respects directional energy (front more prominent)
+  float dir_bias = saturate(dir_front * 0.6 + max(dir_left, dir_right) * 0.4);
+  float beat_contribution = beat_flash * (0.4 + dir_bias * 0.6);
     color += float3(1.0, 1.0, 1.0) * beat_contribution * 0.2;
 
     return float4(saturate(color), 1.0);

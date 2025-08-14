@@ -8,7 +8,8 @@
 
 void UniformManager::update_uniforms(reshade::api::effect_runtime* runtime, float volume, const std::vector<float>& freq_bands, float beat,
     float time_seconds, float phase_60hz, float phase_120hz, float total_phases_60hz, float total_phases_120hz,
-    float volume_left, float volume_right, float audio_pan, float audio_format) {
+    float volume_left, float volume_right, float audio_pan, float audio_format,
+    const float* dir8, uint32_t dir8_count) {
     // Only update uniforms with the correct annotation (source = ...)
     runtime->enumerate_uniform_variables(nullptr, [&](reshade::api::effect_runtime*, reshade::api::effect_uniform_variable var_handle) {
         char source[64] = "";
@@ -39,6 +40,37 @@ void UniformManager::update_uniforms(reshade::api::effect_runtime* runtime, floa
                 runtime->set_uniform_value_float(var_handle, &audio_pan, 1);
             } else if (strcmp(source, "listeningway_audioformat") == 0) {
                 runtime->set_uniform_value_float(var_handle, &audio_format, 1);
+            } else if (strcmp(source, "listeningway_direction8") == 0) {
+                if (dir8 && dir8_count >= 8) {
+                    runtime->set_uniform_value_float(var_handle, dir8, 8);
+                } else {
+                    float zeros[8] = {0,0,0,0,0,0,0,0};
+                    runtime->set_uniform_value_float(var_handle, zeros, 8);
+                }
+            } else if (strcmp(source, "listeningway_front") == 0) {
+                float v = (dir8 && dir8_count >= 1) ? dir8[0] : 0.0f;
+                runtime->set_uniform_value_float(var_handle, &v, 1);
+            } else if (strcmp(source, "listeningway_front_right") == 0) {
+                float v = (dir8 && dir8_count >= 2) ? dir8[1] : 0.0f;
+                runtime->set_uniform_value_float(var_handle, &v, 1);
+            } else if (strcmp(source, "listeningway_right") == 0) {
+                float v = (dir8 && dir8_count >= 3) ? dir8[2] : 0.0f;
+                runtime->set_uniform_value_float(var_handle, &v, 1);
+            } else if (strcmp(source, "listeningway_back_right") == 0) {
+                float v = (dir8 && dir8_count >= 4) ? dir8[3] : 0.0f;
+                runtime->set_uniform_value_float(var_handle, &v, 1);
+            } else if (strcmp(source, "listeningway_back") == 0) {
+                float v = (dir8 && dir8_count >= 5) ? dir8[4] : 0.0f;
+                runtime->set_uniform_value_float(var_handle, &v, 1);
+            } else if (strcmp(source, "listeningway_back_left") == 0) {
+                float v = (dir8 && dir8_count >= 6) ? dir8[5] : 0.0f;
+                runtime->set_uniform_value_float(var_handle, &v, 1);
+            } else if (strcmp(source, "listeningway_left") == 0) {
+                float v = (dir8 && dir8_count >= 7) ? dir8[6] : 0.0f;
+                runtime->set_uniform_value_float(var_handle, &v, 1);
+            } else if (strcmp(source, "listeningway_front_left") == 0) {
+                float v = (dir8 && dir8_count >= 8) ? dir8[7] : 0.0f;
+                runtime->set_uniform_value_float(var_handle, &v, 1);
             }
         }
     });

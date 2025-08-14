@@ -44,6 +44,7 @@ static void UpdateShaderUniforms(reshade::api::effect_runtime* runtime) {    flo
     std::vector<float> freq_bands_to_set;
     float beat_to_set;
     float volume_left, volume_right, audio_pan, audio_format;
+    float dir8_local[8] = {0,0,0,0,0,0,0,0};
     float amplifier = 1.0f;
     {
         LOCK_AUDIO_DATA();
@@ -53,16 +54,24 @@ static void UpdateShaderUniforms(reshade::api::effect_runtime* runtime) {    flo
         volume_left = g_audio_data.volume_left;
         volume_right = g_audio_data.volume_right;
         audio_pan = g_audio_data.audio_pan;
-        audio_format = g_audio_data.audio_format;    }
+        audio_format = g_audio_data.audio_format;
+        // copy direction8 safely
+        for (int i = 0; i < 8; ++i) dir8_local[i] = g_audio_data.direction8[i];
+    }
     // Get amplifier from config - thread-safe snapshot
     const auto config = ConfigurationManager::Snapshot();
-    amplifier = config.frequency.amplifier;
-    // Apply amplifier to all relevant values
-    volume_to_set *= amplifier;
-    beat_to_set *= amplifier;
-    for (auto& v : freq_bands_to_set) v *= amplifier;
-    volume_left *= amplifier;
-    volume_right *= amplifier;
+    // Use split amplifiers for visual/uniform boosting
+    float ampVol = config.frequency.amplifierVolume;
+    float ampBands = config.frequency.amplifierBands;
+    float ampDir = config.frequency.amplifierDirection;
+    amplifier = ampBands; // legacy variable used nowhere else now
+    // Apply per-channel amplifiers
+    volume_to_set *= ampVol;
+    // Do NOT amplify beat: it should be 1.0 on detection and decay naturally
+    for (auto& v : freq_bands_to_set) v *= ampBands;
+    volume_left *= ampVol;
+    volume_right *= ampVol;
+    for (int i = 0; i < 8; ++i) dir8_local[i] *= ampDir;
     // Time/phase calculations
     auto now = std::chrono::steady_clock::now();
     std::chrono::duration<float> elapsed = now - g_start_time;
@@ -72,7 +81,7 @@ static void UpdateShaderUniforms(reshade::api::effect_runtime* runtime) {    flo
     float total_phases_60hz = time_seconds * 60.0f;
     float total_phases_120hz = time_seconds * 120.0f;    g_uniform_manager.update_uniforms(runtime, volume_to_set, freq_bands_to_set, beat_to_set,
         time_seconds, phase_60hz, phase_120hz, total_phases_60hz, total_phases_120hz,
-        volume_left, volume_right, audio_pan, audio_format);
+        volume_left, volume_right, audio_pan, audio_format, dir8_local, 8);
 }
 
 /**

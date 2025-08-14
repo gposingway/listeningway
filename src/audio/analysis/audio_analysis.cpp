@@ -38,6 +38,8 @@ AudioAnalyzer g_audio_analyzer;
 // Standard standalone function to analyze audio buffers (used by audio_capture.cpp)
 void AnalyzeAudioBuffer(const float* data, size_t numFrames, size_t numChannels, AudioAnalysisData& out) {
     const auto config = Listeningway::ConfigurationManager::Snapshot(); // Thread-safe snapshot for audio capture threads
+    // Reset directional intensities each frame
+    out.direction8 = {0.0f,0.0f,0.0f,0.0f,0.0f,0.0f,0.0f,0.0f};
     
     // DEBUG: Validate input data
     static int input_debug_counter = 0;
@@ -729,7 +731,65 @@ void AnalyzeAudioBuffer(const float* data, size_t numFrames, size_t numChannels,
         if (++unsupported_debug_counter % 200 == 0) {
             LOG_INFO("[PAN_DEBUG] UNSUPPORTED_FORMAT: " + std::to_string(numChannels) + " channels, Pan=0.0");
         }
-    }    // --- At this point, pan_norm is the detected pan value ---
+    }
+    // --- Directional 8-bucket mapping (Front, FR, Right, BR, Back, BL, Left, FL) ---
+    // Build per-format directional energy distribution using RMS components above (pre-amplifier)
+    auto clamp01 = [](float v) { return (v < 0.0f ? 0.0f : (v > 1.0f ? 1.0f : v)); };
+    auto add_dir = [&](int idx, float v) {
+        if (idx >= 0 && idx < 8) out.direction8[idx] += std::max(0.0f, v);
+    };
+
+    if (numChannels == 1) {
+        // Mono: treat as front/center
+        add_dir(0, rms); // Front
+    } else if (numChannels == 2) {
+        // Stereo: common-mode becomes Front, differences become Front-Left/Front-Right and Left/Right
+        float l = rms_left;
+        float r = rms_right;
+        float common = std::min(l, r);
+        float side_l = std::max(0.0f, l - common);
+        float side_r = std::max(0.0f, r - common);
+        add_dir(0, common);           // Front
+        add_dir(7, side_l * 0.7f);    // Front-Left
+        add_dir(6, side_l * 0.3f);    // Left
+        add_dir(1, side_r * 0.7f);    // Front-Right
+        add_dir(2, side_r * 0.3f);    // Right
+    } else if (numChannels == 6) {
+        // 5.1: FL, FR, C, LFE, SL, SR
+        add_dir(7, rms_left);          // FL -> Front-Left
+        add_dir(1, rms_right);         // FR -> Front-Right
+        add_dir(0, rms_center);        // C -> Front
+        add_dir(6, rms_side_left * 0.6f);  // SL -> Left (mostly lateral)
+        add_dir(2, rms_side_right * 0.6f); // SR -> Right
+        // Small contribution to Back from sides for ambience
+        add_dir(4, (rms_side_left + rms_side_right) * 0.2f);
+    } else if (numChannels == 8) {
+        // 7.1: FL, FR, C, LFE, RL, RR, SL, SR (per AudioFormatUtils mapping)
+        add_dir(7, rms_left);            // FL -> Front-Left
+        add_dir(1, rms_right);           // FR -> Front-Right
+        add_dir(0, rms_center);          // C -> Front
+        add_dir(5, rms_rear_left);       // RL -> Back-Left
+        add_dir(3, rms_rear_right);      // RR -> Back-Right
+        add_dir(6, rms_side_left);       // SL -> Left
+        add_dir(2, rms_side_right);      // SR -> Right
+        // Back center approximated by average rear energy
+        add_dir(4, 0.5f * (rms_rear_left + rms_rear_right));
+    } else {
+        // Fallback: distribute by pan only
+        float val = std::sqrt(sum_total / std::max<size_t>(1, numFrames * numChannels));
+        // Map pan [-1,1] to left/right buckets
+        float p = std::clamp(pan_norm, -1.0f, 1.0f);
+        float right_w = (p + 1.0f) * 0.5f;
+        float left_w = 1.0f - right_w;
+        add_dir(0, val * 0.5f); // Some front presence
+        add_dir(2, val * right_w * 0.7f);
+        add_dir(6, val * left_w * 0.7f);
+        add_dir(1, val * right_w * 0.3f);
+        add_dir(7, val * left_w * 0.3f);
+    }
+    // Clamp to [0,1] after amplifier will be applied later when publishing uniforms
+    for (auto &d : out.direction8) d = std::max(0.0f, d);
+    // --- At this point, pan_norm is the detected pan value ---
     // Apply user pan offset (from config)
     float pan_offset = std::clamp(config.audio.panOffset, -1.0f, 1.0f);
     float pan_with_offset = std::clamp(pan_norm + pan_offset, -1.0f, 1.0f);
@@ -777,6 +837,7 @@ void AnalyzeAudioBuffer(const float* data, size_t numFrames, size_t numChannels,
         out.volume = 0.0f;
         std::fill(out.freq_bands.begin(), out.freq_bands.end(), 0.0f);
         out.beat = 0.0f;
+    out.direction8 = {0.0f,0.0f,0.0f,0.0f,0.0f,0.0f,0.0f,0.0f};
     }
 }
 

@@ -21,11 +21,11 @@ void BeatDetectorSpectralFluxAuto::Process(const std::vector<float>& magnitudes,
         last_peak_time_ = time_;
     }
 
-    // Beat envelope (fast attack, slower decay)
-    float target = std::clamp((strength + moving_flux_low_ * 0.5f) * 3.0f, 0.0f, 1.0f);
-    if (target > result_.beat) {
-        result_.beat += (target - result_.beat) * 0.6f;
+    // Beat behavior: impulse at detection (1.0), then decay
+    if (is_beat_now) {
+        result_.beat = 1.0f;
     } else {
+        // Decay over time when no new beat
         result_.beat = std::max(0.0f, result_.beat - 1.2f * dt);
     }
 
