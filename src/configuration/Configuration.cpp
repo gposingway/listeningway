@@ -59,8 +59,6 @@ bool Configuration::Validate() {
     }
     frequency.equalizerWidth = std::clamp(frequency.equalizerWidth, 0.05f, 0.5f);
     frequency.amplifier = std::clamp(frequency.amplifier, 1.0f, 11.0f);
-    frequency.band_amplifier = std::clamp(frequency.band_amplifier, 0.1f, 10.0f);
-    frequency.volume_amplifier = std::clamp(frequency.volume_amplifier, 0.1f, 10.0f);
     
     // Ensure min < max for frequency ranges
     if (frequency.minFreq >= frequency.maxFreq) {
@@ -107,12 +105,14 @@ bool Configuration::SaveToJson(const std::string& filepath) const {
         file << "    \"analysisEnabled\": " << (audio.analysisEnabled ? "true" : "false") << ",\n";
         file << "    \"captureProviderCode\": \"" << audio.captureProviderCode << "\",\n";
         file << "    \"panSmoothing\": " << audio.panSmoothing << ",\n";
-        file << "    \"panOffset\": " << audio.panOffset << "\n";
+    file << "    \"panOffset\": " << audio.panOffset << ",\n";
+    file << "    \"simdEnabled\": " << (audio.simdEnabled ? "true" : "false") << "\n";
         file << "  },\n";
         
         // Beat detection settings
         file << "  \"beat\": {\n";
-        file << "    \"algorithm\": " << beat.algorithm << ",\n";
+    file << "    \"algorithm\": " << beat.algorithm << ",\n";
+    file << "    \"profile\": \"" << beat.profile << "\",\n";
         file << "    \"falloffDefault\": " << beat.falloffDefault << ",\n";
         file << "    \"timeScale\": " << beat.timeScale << ",\n";
         file << "    \"timeInitial\": " << beat.timeInitial << ",\n";
@@ -143,8 +143,6 @@ bool Configuration::SaveToJson(const std::string& filepath) const {
         file << "],\n";
         file << "    \"equalizerWidth\": " << frequency.equalizerWidth << ",\n";
         file << "    \"amplifier\": " << frequency.amplifier << ",\n";
-        file << "    \"bandAmplifier\": " << frequency.band_amplifier << ",\n";
-        file << "    \"volumeAmplifier\": " << frequency.volume_amplifier << ",\n";
         // Serialize new members
         file << "    \"bands\": " << frequency.bands << ",\n";
         file << "    \"fftSize\": " << frequency.fftSize << ",\n";
@@ -222,10 +220,22 @@ bool Configuration::LoadFromJson(const std::string& filepath) {
         
         value = getValue("panOffset");
         if (!value.empty()) audio.panOffset = std::stof(value);
+
+    value = getValue("simdEnabled");
+    if (!value.empty()) audio.simdEnabled = (value == "true");
         
         // Parse beat detection settings
         value = getValue("algorithm");
         if (!value.empty()) beat.algorithm = std::stoi(value);
+        value = getValue("profile");
+        if (!value.empty()) {
+            // remove quotes if present
+            if (!value.empty() && value.front() == '"' && value.back() == '"') {
+                beat.profile = value.substr(1, value.length() - 2);
+            } else {
+                beat.profile = value;
+            }
+        }
         
         value = getValue("falloffDefault");
         if (!value.empty()) beat.falloffDefault = std::stof(value);
@@ -297,20 +307,6 @@ bool Configuration::LoadFromJson(const std::string& filepath) {
         
         value = getValue("amplifier");
         if (!value.empty()) frequency.amplifier = std::stof(value);
-        
-        value = getValue("bandAmplifier");
-        if (!value.empty()) {
-            frequency.band_amplifier = std::stof(value);
-        } else {
-            frequency.band_amplifier = DEFAULT_AMPLIFIER; // Ensure default if missing
-        }
-        
-        value = getValue("volumeAmplifier");
-        if (!value.empty()) {
-            frequency.volume_amplifier = std::stof(value);
-        } else {
-            frequency.volume_amplifier = DEFAULT_AMPLIFIER; // Ensure default if missing
-        }
         
         // Parse new members
         value = getValue("bands");

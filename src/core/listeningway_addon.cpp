@@ -205,28 +205,80 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD ul_reason_for_call, LPVOID lpReserv
  */
 // Asynchronous, robust provider switch. Returns true on success, false on failure.
 extern "C" bool SwitchAudioProvider(int providerType, int timeout_ms = 2000) {
-    LOCK_PROVIDER_SWITCH();
-    g_switching_provider = true;
+    // Try to acquire provider switch lock; if already switching, return false quickly
+    {
+        LOCK_PROVIDER_SWITCH();
+        if (g_switching_provider) {
+            LOG_DEBUG("[Addon] SwitchAudioProvider: Already switching; ignoring request");
+            return false;
+        }
+        g_switching_provider = true;
+    }
     LOG_DEBUG("[Addon] SwitchAudioProvider: Begin switch to provider " + std::to_string(providerType));
 
     // If switching to None, just stop analysis and thread
     if (providerType < 0) {
+        // Update live configuration to reflect Off state
+        {
+            auto& cfg = ConfigurationManager::Instance().GetConfig();
+            cfg.audio.captureProviderCode = "off";
+            ConfigurationManager::Instance().SetAnalysisEnabled(false);
+            ConfigurationManager::Instance().Save();
+        }
         if (g_audio_analysis_enabled) {
             g_audio_analysis_enabled = false;
             StopAudioCaptureThread(g_audio_thread_running, g_audio_thread);
             LOG_DEBUG("[Addon] SwitchAudioProvider: Audio analysis disabled and thread stopped (None selected)");
         }
-        g_switching_provider = false;
-        return true;    }    // Otherwise, robustly switch provider and restart thread if needed
+        // Clear analysis data so visuals zero out instead of freezing
+        {
+            LOCK_AUDIO_DATA();
+            const auto snap = ConfigurationManager::Snapshot();
+            g_audio_data = AudioAnalysisData(snap.frequency.bands);
+        }
+        {
+            LOCK_PROVIDER_SWITCH();
+            g_switching_provider = false;
+        }
+        return true;
+    }
+
+    // Otherwise, switch provider. If capture was running, the helper will restart it.
+    const bool was_running = g_audio_thread_running.load();
+    // Update config to reflect target provider and enable analysis
+    {
+        auto& cfg = ConfigurationManager::Instance().GetConfig();
+        cfg.audio.captureProviderCode = (providerType == 0 ? std::string("system") : std::string("game"));
+        ConfigurationManager::Instance().SetAnalysisEnabled(true);
+        ConfigurationManager::Instance().Save();
+    }
     bool switch_ok = SwitchAudioCaptureProviderAndRestart(providerType, g_audio_thread_running, g_audio_thread, g_audio_data);
+
     if (switch_ok) {
+        // If we came from Off (no thread running), explicitly start analyzer and capture now
+        if (!was_running && !g_audio_thread_running.load()) {
+            LOG_DEBUG("[Addon] SwitchAudioProvider: Starting analyzer and capture after switching from Off");
+            try {
+                g_audio_analyzer.Start();
+                StartAudioCaptureThread(g_audio_thread_running, g_audio_thread, g_audio_data);
+            } catch (...) {
+                LOG_ERROR("[Addon] SwitchAudioProvider: Exception while starting analyzer/capture after switch");
+                {
+                    LOCK_PROVIDER_SWITCH();
+                    g_switching_provider = false;
+                }
+                return false;
+            }
+        }
         g_audio_analysis_enabled = true;
-        // Note: We could save the provider code here if needed, but it's handled in the switch function
-        LOG_DEBUG("[Addon] SwitchAudioProvider: Switched and restarted to provider " + std::to_string(providerType));
+        LOG_DEBUG("[Addon] SwitchAudioProvider: Switched to provider " + std::to_string(providerType) + (was_running ? " (hot restart)" : " (cold start)"));
     } else {
         LOG_ERROR("[Addon] SwitchAudioProvider: Failed to switch/restart to provider " + std::to_string(providerType));
     }
-    g_switching_provider = false;
+    {
+        LOCK_PROVIDER_SWITCH();
+        g_switching_provider = false;
+    }
     return switch_ok;
 }
 

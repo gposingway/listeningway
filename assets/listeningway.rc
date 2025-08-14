@@ -3,8 +3,8 @@
 #include <windows.h>
 
 VS_VERSION_INFO VERSIONINFO
- FILEVERSION     1,2,0,3
- PRODUCTVERSION  1,2,0,3
+ FILEVERSION     1,2,0,4
+ PRODUCTVERSION  1,2,0,4
  FILEFLAGSMASK   0x3fL
 #ifdef _DEBUG
  FILEFLAGS       0x1L
@@ -21,12 +21,12 @@ BEGIN
         BEGIN
             VALUE "CompanyName",      "Leon Aquitaine"
             VALUE "FileDescription",  "Provides audio volume and frequency data to ReShade effects."
-            VALUE "FileVersion",      "1.2.0.3"
+            VALUE "FileVersion",      "1.2.0.4"
             VALUE "InternalName",     "Listeningway"
             VALUE "LegalCopyright",   "Copyright (C) 2025 Leon Aquitaine"
             VALUE "OriginalFilename", "Listeningway.addon"
             VALUE "ProductName",      "Listeningway"
-            VALUE "ProductVersion",   "1.2.0.3"
+            VALUE "ProductVersion",   "1.2.0.4"
         END
     END
     BLOCK "VarFileInfo"

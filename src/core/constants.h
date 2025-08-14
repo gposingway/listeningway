@@ -28,7 +28,7 @@ enum class AudioCaptureProvider : int {
 };
 
 // Audio Analysis
-constexpr size_t DEFAULT_NUM_BANDS = 64;
+constexpr size_t DEFAULT_NUM_BANDS = 32;
 constexpr size_t DEFAULT_FFT_SIZE = 512;
 constexpr float DEFAULT_FLUX_ALPHA = 0.1f;
 constexpr float DEFAULT_FLUX_THRESHOLD_MULTIPLIER = 1.5f;
@@ -55,8 +55,8 @@ constexpr float DEFAULT_BEAT_TIME_INITIAL = 0.5f;
 constexpr float DEFAULT_BEAT_TIME_MIN = 0.1f;
 constexpr float DEFAULT_BEAT_TIME_DIVISOR = 0.2f;
 constexpr float DEFAULT_BAND_NORM = 0.1f;
-constexpr float DEFAULT_BAND_MIN_FREQ = 20.0f;    // Start from audible range
-constexpr float DEFAULT_BAND_MAX_FREQ = 8000.0f;  // Good musical coverage up to 8kHz
+constexpr float DEFAULT_BAND_MIN_FREQ = 183.0f;
+constexpr float DEFAULT_BAND_MAX_FREQ = 22050.0f;
 constexpr bool  DEFAULT_BAND_LOG_SCALE = true;
 constexpr float DEFAULT_BAND_LOG_STRENGTH = 0.1f;
 

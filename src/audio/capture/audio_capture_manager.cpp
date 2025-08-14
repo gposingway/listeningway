@@ -35,7 +35,19 @@ bool AudioCaptureManager::Initialize() {
             LOG_WARNING("[AudioCaptureManager] Failed to initialize provider: " + provider->GetProviderName());
         }
     }
-      // Select the initial provider
+    // Choose preferred provider based on is_default flag
+    for (auto& provider : providers_) {
+        if (provider->IsAvailable() && provider->GetProviderInfo().is_default) {
+            preferred_provider_type_ = provider->GetProviderType();
+            // Sync config to the default provider code
+            auto& cfg = Listeningway::ConfigurationManager::Instance().GetConfig();
+            cfg.audio.captureProviderCode = provider->GetProviderInfo().code;
+            Listeningway::ConfigurationManager::Instance().Save();
+            LOG_DEBUG("[AudioCaptureManager] Preferred provider set to is_default: " + provider->GetProviderName());
+            break;
+        }
+    }
+    // Select the initial provider
     current_provider_ = SelectBestProvider();
     if (!current_provider_) {
         LOG_ERROR("[AudioCaptureManager] No available audio capture providers");
@@ -117,8 +129,11 @@ bool AudioCaptureManager::SetPreferredProvider(AudioCaptureProviderType type) {
     }
     
     preferred_provider_type_ = type;
-    // Set analysisEnabled based on provider's activates_capture
+    // Update live configuration: provider code and analysisEnabled
+    auto& cfg = Listeningway::ConfigurationManager::Instance().GetConfig();
+    cfg.audio.captureProviderCode = provider->GetProviderInfo().code;
     Listeningway::ConfigurationManager::Instance().SetAnalysisEnabled(provider->GetProviderInfo().activates_capture);
+    Listeningway::ConfigurationManager::Instance().Save();
     LOG_INFO("[AudioCaptureManager] Set preferred provider to: " + provider->GetProviderName());
     
     // If we're currently using a different provider, switch to the preferred one
@@ -188,7 +203,16 @@ bool AudioCaptureManager::SwitchProviderByCodeAndRestart(const std::string& prov
     }
     
     // Use the existing method with the provider type
-    return SwitchProviderAndRestart(target_provider->GetProviderType(), config, running, thread, data);
+    bool was_running = running.load();
+    bool ok = SwitchProviderAndRestart(target_provider->GetProviderType(), config, running, thread, data);
+    if (ok && !was_running && !running.load() && target_provider->GetProviderInfo().activates_capture) {
+        // If we were previously Off (no running thread), start analyzer and capture now
+        extern AudioAnalyzer g_audio_analyzer;
+        LOG_DEBUG("[AudioCaptureManager] Starting analyzer and capture after switching from Off by code");
+        g_audio_analyzer.Start();
+        ok = StartCapture(config, running, thread, data);
+    }
+    return ok;
 }
 
 AudioCaptureProviderType AudioCaptureManager::GetCurrentProvider() const {
@@ -394,13 +418,15 @@ bool AudioCaptureManager::ApplyConfiguration(const Listeningway::Configuration& 
         }
         // Clear analysis data so UI doesn't show stale values
         g_audio_data = AudioAnalysisData(config.frequency.bands);
+        Listeningway::ConfigurationManager::Instance().SetAnalysisEnabled(false);
         last_activates_capture = false;
         return true;
     }
     // If switching from none to capture, start system
     if (!last_activates_capture && activates_capture) {
         LOG_DEBUG("[AudioCaptureManager] Switching to capturing provider, starting audio system");
-        g_audio_analyzer.Start();
+    Listeningway::ConfigurationManager::Instance().SetAnalysisEnabled(true);
+    g_audio_analyzer.Start();
         if (!StartCapture(config, g_audio_thread_running, g_audio_thread, g_audio_data)) {
             LOG_ERROR("[AudioCaptureManager] Failed to start audio capture");
             last_activates_capture = false;

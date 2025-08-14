@@ -2,7 +2,7 @@
 
 #include <array>
 #include <string>
-#include "../constants.h"
+#include "core/constants.h"
 
 namespace Listeningway {
 
@@ -21,11 +21,14 @@ struct Configuration {
         // int captureProvider = -1;  // (legacy, remove after migration)
         float panSmoothing = 0.1f;
         float panOffset = 0.0f; // User panning adjustment, range [-1, +1], default 0
+    bool simdEnabled = true; // Enable SIMD optimizations (SSE/AVX) when available
     } audio;
 
     // Beat Detection Settings
     struct BeatDetection {
         int algorithm = DEFAULT_BEAT_DETECTION_ALGORITHM; 
+    // Persisted beat profile name: "general", "edm", "acoustic", "custom"
+    std::string profile = "general";
         float falloffDefault = DEFAULT_BEAT_FALLOFF_DEFAULT;
         float timeScale = DEFAULT_BEAT_TIME_SCALE;
         float timeInitial = DEFAULT_BEAT_TIME_INITIAL;
@@ -41,13 +44,6 @@ struct Configuration {
         float fluxLowAlpha = DEFAULT_FLUX_LOW_ALPHA;
         float fluxLowThresholdMultiplier = DEFAULT_FLUX_LOW_THRESHOLD_MULTIPLIER;
         float fluxMin = DEFAULT_BEAT_FLUX_MIN;
-        
-        // New artistic beat detection controls
-        std::string beat_style = "mixed";   // "electronic", "acoustic", "vocal", "mixed"
-        float kick_punch = 1.0f;            // How sensitive to bass drums
-        float snare_snap = 0.8f;            // How sensitive to snare/clap
-        float beat_boost = 1.5f;            // Overall beat enhancement
-        float beat_hold = 0.3f;             // How long beats visually sustain
     } beat;
 
     // Frequency Band Settings
@@ -58,19 +54,10 @@ struct Configuration {
         float maxFreq = DEFAULT_BAND_MAX_FREQ;
         std::array<float, 5> equalizerBands = { DEFAULT_EQUALIZER_BAND1, DEFAULT_EQUALIZER_BAND2, DEFAULT_EQUALIZER_BAND3, DEFAULT_EQUALIZER_BAND4, DEFAULT_EQUALIZER_BAND5 };
         float equalizerWidth = DEFAULT_EQUALIZER_WIDTH;
-        float amplifier = DEFAULT_AMPLIFIER;  // Legacy - kept for compatibility
-        float band_amplifier = DEFAULT_AMPLIFIER;   // Separate amplifier for frequency bands
-        float volume_amplifier = DEFAULT_AMPLIFIER; // Separate amplifier for volume
+        float amplifier = DEFAULT_AMPLIFIER;
         size_t bands = DEFAULT_NUM_BANDS;
         size_t fftSize = DEFAULT_FFT_SIZE;
         float bandNorm = DEFAULT_BAND_NORM;
-        
-        // New aesthetic controls for artistic visualization
-        float bass_punch = 1.5f;            // Make low frequencies hit harder
-        float high_detail = 1.2f;           // Bring out crisp details  
-        float vocal_focus = 1.0f;           // Emphasize voices and instruments
-        float quick_response = 2.0f;        // How fast visuals react to changes
-        float smooth_fade = 0.7f;           // How gently levels drop off
     } frequency;
 
     // Audio sample rate (Hz)

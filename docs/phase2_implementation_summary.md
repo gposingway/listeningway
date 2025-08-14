@@ -2,31 +2,11 @@
 
 ## 🔴 **CRITICAL FIXES IMPLEMENTED**
 
-### 1. **SoC Violation Resolution - overlay.cpp Decomposition**
-**Problem**: 817-line overlay.cpp file mixing multiple responsibilities
-**Solution**: Created specialized UI renderer classes
-- ✅ `BaseRenderer` - Common ImGui patterns and DRY elimination
-- ✅ `VolumeRenderer` - Volume, pan, spatialization display
-- ✅ `FrequencyBandRenderer` - Frequency visualization (eliminates 5x duplicate slider code)
-- ✅ `BeatDetectionRenderer` - Beat detection settings and controls
+### 1. **Overlay/UI Simplification**
+Legacy beat UI removed; provider selection bound to configuration; SIMD toggle added. Further decomposition remains a future task.
 
-**Impact**: 
-- Reduces overlay.cpp from 817 lines to ~200 lines (projected)
-- Eliminates 15+ repetitive ImGui pattern violations
-- Clear separation of UI rendering concerns
-
-### 2. **Error Handling Standardization - Result<T, Error> Pattern**
-**Problem**: Mixed exception/HRESULT/logging patterns across audio providers
-**Solution**: Implemented comprehensive error handling system
-- ✅ `Result<T, Error>` type for monadic error handling
-- ✅ `Error` class with typed error categories (COM_ERROR, AUDIO_DEVICE_ERROR, etc.)
-- ✅ `RETURN_IF_FAILED` and `TRY_ASSIGN` macros for HRESULT conversion
-- ✅ Monadic operations (Map, FlatMap, OnSuccess, OnError)
-
-**Impact**:
-- Consistent error propagation across all audio providers
-- Eliminates silent failures and improves debugging
-- Functional programming patterns for error composition
+### 2. **Error Handling**
+Standardized logs and lifecycle checks in providers and manager; full Result<T> adoption is deferred.
 
 ### 3. **Resource Management - RAII Wrappers**
 **Problem**: Manual COM interface management across providers
@@ -41,18 +21,8 @@
 - Exception-safe resource cleanup
 - Prevents resource leaks in error conditions
 
-### 4. **Provider Architecture V2 - Modern Error Handling**
-**Problem**: Inconsistent error handling patterns across SystemAudioProvider, ProcessAudioProvider
-**Solution**: Created modernized provider architecture
-- ✅ `IAudioCaptureProviderV2` - Result<T>-based interface
-- ✅ `WasapiProviderBase` - Common WASAPI error handling patterns
-- ✅ `SystemAudioProviderV2` & `ProcessAudioProviderV2` - Modernized implementations
-- ✅ Template method pattern for capture thread consistency
-
-**Impact**:
-- Unified error handling across all audio providers
-- Eliminates provider-specific error handling inconsistencies
-- Cleaner separation of concerns in capture logic
+### 4. **Provider Architecture**
+Manager selects default by `is_default` (System), supports Off provider, and stabilizes switching (Off clears data; cold-start on resume).
 
 ### 5. **YAGNI Analysis - SpectralFluxAutoBeatDetector Over-Engineering**
 **Problem**: 10+ complex parameters that violate YAGNI principle
@@ -79,7 +49,7 @@
 
 ---
 
-## 🟡 **REMAINING PHASE 3 PRIORITIES**
+## 🟡 **REMAINING PRIORITIES**
 
 ### 1. **Large Function Extraction** (Medium Priority)
 - Extract overlay.cpp functions into renderer implementations
@@ -91,14 +61,13 @@
 - Review ConfigurationManager singleton thread safety
 - Standardize locking strategies across modules
 
-### 3. **Provider Migration** (Low Priority)
-- Migrate existing providers to V2 architecture
-- Implement comprehensive error recovery protocols
-- Add provider capability detection
+### 3. **Provider Extensions** (Low Priority)
+- Add process-specific provider (future)
+- Expand capability detection and recovery paths
 
 ---
 
-## 📊 **PROGRESS METRICS**
+## 📊 **PROGRESS SNAPSHOT**
 
 | Anti-Pattern | Phase 1 | Phase 2 | Phase 3 | Status |
 |--------------|---------|---------|---------|---------|
@@ -109,7 +78,7 @@
 | Thread Safety | ⚡ 50% | ✅ 85% | ⚡ 15% | **MOSTLY COMPLETE** |
 | Large Functions | ❌ 0% | ✅ 70% | ⚡ 30% | **SIGNIFICANT PROGRESS** |
 | Resource Management | ❌ 0% | ✅ 95% | ⚡ 5% | **MOSTLY COMPLETE** |
-| Error Handling | ❌ 0% | ✅ 90% | ⚡ 10% | **MOSTLY COMPLETE** |
+| Error Handling | ❌ 0% | ✅ 70% | ⚡ 30% | **IN PROGRESS** |
 
 **Overall Refactoring Progress: 78% Complete**
 
@@ -118,8 +87,8 @@
 ## 🚀 **NEXT STEPS**
 
 1. **Immediate**: Implement the UI renderer classes in overlay.cpp
-2. **Short-term**: Migrate existing providers to V2 architecture  
+2. **Short-term**: Harden device-change paths and add retries
 3. **Medium-term**: Implement profile-based beat detection
-4. **Long-term**: Complete thread safety standardization
+4. **Long-term**: Complete thread safety standardization and overlay decomposition
 
-The critical architectural issues have been addressed with modern C++ patterns, RAII resource management, and functional error handling. The codebase is now significantly more maintainable and follows industry best practices.
+We’ve added SSE SIMD with a runtime toggle, stabilized provider switching (Off ↔ System), added caching and a tempo worker, and refreshed docs. Further refactors are planned but not yet landed.

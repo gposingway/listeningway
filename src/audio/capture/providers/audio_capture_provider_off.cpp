@@ -26,6 +26,14 @@ bool AudioCaptureProviderOff::StartCapture(const Listeningway::Configuration& co
                 data.volume = 0.0f;
                 std::fill(data.freq_bands.begin(), data.freq_bands.end(), 0.0f);
                 data.beat = 0.0f;
+                data.tempo_bpm = 0.0f;
+                data.tempo_confidence = 0.0f;
+                data.beat_phase = 0.0f;
+                data.tempo_detected = false;
+                data.volume_left = 0.0f;
+                data.volume_right = 0.0f;
+                data.audio_pan = 0.0f;
+                data.audio_format = 0.0f;
             }
             // Sleep to avoid busy waiting
             std::this_thread::sleep_for(std::chrono::milliseconds(50));

@@ -22,6 +22,7 @@ include_directories(${RESHADE_SDK_PATH})
 include_directories(
     ${CMAKE_SOURCE_DIR}/src
     ${CMAKE_SOURCE_DIR}/src/audio
+    ${CMAKE_SOURCE_DIR}/src/audio/beat_detection
     ${CMAKE_SOURCE_DIR}/src/core
     ${CMAKE_SOURCE_DIR}/src/core/configuration
     ${CMAKE_SOURCE_DIR}/src/utils
@@ -35,7 +36,13 @@ add_library(${PROJECT_NAME} SHARED
     src/audio/capture/audio_capture_manager.cpp
     src/audio/capture/audio_capture_manager.h
     src/audio/analysis/audio_analysis.cpp
-    src/audio/analysis/audio_analysis.h    src/core/overlay.cpp src/core/overlay.h
+    src/audio/analysis/audio_analysis.h
+    src/audio/analysis/fft_engine.cpp src/audio/analysis/fft_engine.h
+    src/audio/analysis/tempo_worker.cpp src/audio/analysis/tempo_worker.h
+    src/audio/analysis/ring_buffer.h
+    src/core/overlay.cpp src/core/overlay.h
+    src/core/beat_settings_panel.cpp src/core/beat_settings_panel.h
+    src/audio/analysis/beat_profiles.cpp src/audio/analysis/beat_profiles.h
     src/core/thread_safety_manager.cpp src/core/thread_safety_manager.h
     src/utils/logging.cpp src/utils/logging.h
     src/core/uniform_manager.cpp src/core/uniform_manager.h
@@ -47,6 +54,12 @@ add_library(${PROJECT_NAME} SHARED
     src/audio/capture/providers/audio_capture_provider_system.cpp
     src/audio/capture/providers/audio_capture_provider_off.h
     src/audio/capture/providers/audio_capture_provider_off.cpp
+    src/audio/beat_detection/beat_detector.cpp
+    src/audio/beat_detection/beat_detector.h
+    src/audio/beat_detection/beat_detector_simple_energy.cpp
+    src/audio/beat_detection/beat_detector_simple_energy.h
+    src/audio/beat_detection/beat_detector_spectral_flux_auto.cpp
+    src/audio/beat_detection/beat_detector_spectral_flux_auto.h
     assets/listeningway.rc
 )
 

@@ -95,17 +95,17 @@ std::vector<std::string> ConfigurationManager::EnumerateAvailableProviders() con
 }
 
 std::string ConfigurationManager::GetDefaultProviderCode() const {
-    // Enumerate available providers
-    auto available = EnumerateAvailableProviders();
-    // If config has a provider marked as default, use it
-    // (Assume config file or code can be extended to support Is_default flag)
-    // For now, use the first available provider that is not "off"
-    for (const auto& code : available) {
-        if (code != "off") {
-            return code;
+    // Prefer the provider flagged as is_default by AudioCaptureManager
+    if (g_audio_capture_manager) {
+        for (const auto& info : g_audio_capture_manager->GetAvailableProviderInfos()) {
+            if (info.is_default) return info.code;
         }
     }
-    // Fallback
+    // Fallback: first non-off enumerated provider
+    auto available = EnumerateAvailableProviders();
+    for (const auto& code : available) {
+        if (code != "off") return code;
+    }
     return !available.empty() ? available[0] : "off";
 }
 
@@ -114,16 +114,14 @@ void ConfigurationManager::ValidateProvider() {
     auto& code = m_config.audio.captureProviderCode;
     // If code is empty or not in available list, select default
     if (code.empty() || std::find(available.begin(), available.end(), code) == available.end()) {
-        // Always select the provider with is_default flag (guaranteed to exist)
+        // Select the provider with is_default flag
         if (g_audio_capture_manager) {
             for (const auto& info : g_audio_capture_manager->GetAvailableProviderInfos()) {
-                if (info.is_default) {
-                    code = info.code;
-                    return;
-                }
+                if (info.is_default) { code = info.code; return; }
             }
         }
-        // If for some reason not found (should never happen), leave code empty
+        // Fallback to first non-off
+        for (const auto& c : available) { if (c != "off") { code = c; return; } }
     }
 }
 

@@ -19,6 +19,11 @@
 
 Listeningway listens to your system's audio, analyzes it live, and exposes data like volume, frequency bands, and beat detection directly to your `.fx` files.
 
+Key capabilities in this build:
+- Stable provider switching between System Audio and None (Off). Off clears visuals immediately; switching back cold-starts analysis automatically.
+- Default provider is the one marked as is_default (System Audio).
+- SIMD-accelerated analysis (SSE) with a runtime toggle in the overlay; scalar fallback remains.
+
 ## For End Users: Get Started!
 
 Let's add audio reactivity to your existing ReShade presets or try out effects designed for Listeningway! Getting started is super easy:
@@ -49,8 +54,8 @@ Let's add audio reactivity to your existing ReShade presets or try out effects d
 
 **Tuning (Optional):**
 
-* For most users, the default settings work great! If you want to fine-tune the audio analysis (like how sensitive beat detection is), you can use the built-in overlay UI (accessible through the ReShade menu) or edit the `Listeningway.ini` file located in the same directory as the .addon file. More details on this in the section for developers below.
-* **New in 1.2.0.0:** The overlay UI now features an **Amplifier** slider. This setting multiplies all overlay visualizations and Listeningway_* uniforms (volume, beat, frequency bands, left/right volume) for enhanced visual feedback, but does not affect the underlying audio analysis.
+* For most users, the default settings work great! If you want to fine-tune the audio analysis (like how sensitive beat detection is), you can use the built-in overlay UI (accessible through the ReShade menu) or edit the `Listeningway.json` file located in the same directory as the .addon file. More details on this in the section for developers below.
+* The overlay UI features an **Amplifier** slider. This multiplies all overlay visualizations and Listeningway_* uniforms (volume, beat, frequency bands, left/right volume) for enhanced visual feedback, but does not affect the underlying audio analysis.
 
 <div align="center">
 
@@ -291,16 +296,17 @@ It's streamlined with batch scripts\!
 
 </div>
 
-All tunable parameters—such as FFT size, number of bands, smoothing factors, beat detection thresholds, and overlay/visualization options—are stored in `Listeningway.json`, located in the same directory as the ReShade `.addon` file. Changes made through the overlay UI are saved automatically to this file. If you edit the JSON manually, restart your game or ReShade to apply changes. Any missing settings will fall back to sensible defaults.
+All tunable parameters—such as FFT size, number of bands, smoothing factors, beat detection thresholds, capture provider, and overlay/visualization options—are stored in `Listeningway.json`, located in the same directory as the ReShade `.addon` file. Changes made through the overlay UI are saved automatically to this file. If you edit the JSON manually, restart your game or ReShade to apply changes. Any missing settings will fall back to sensible defaults.
 
-**Example `Listeningway.json` (as of June 2025):**
+**Example `Listeningway.json` (as of Aug 2025):**
 
 ```json
 {
   "audio": {
     "analysisEnabled": true,
-    "captureProviderCode": "system",
-    "panSmoothing": 0.0
+  "captureProviderCode": "system",
+  "panSmoothing": 0.0,
+  "simdEnabled": true
   },
   "beat": {
     "algorithm": 1,
@@ -341,7 +347,7 @@ All tunable parameters—such as FFT size, number of bands, smoothing factors, b
 **Overlay UI:**
 
 The overlay UI (open via the ReShade menu) allows real-time adjustment of all major settings, including:
-- Volume normalization, band normalization, pan smoothing, and more
+- Volume normalization, band normalization, pan smoothing, SIMD enable, and more
 
 All changes made in the overlay UI are saved back to `Listeningway.json` atomically.
 
@@ -405,13 +411,13 @@ For most users, the defaults work well! Tweak only if you want to optimize for a
 
 **Architecture Overview:**
 
-  * `audio_capture.*`: Handles WASAPI audio capture thread.
-  * `audio_analysis.*`: Performs FFT, calculates volume, bands, beat detection.
+  * `audio_capture.*`: Handles WASAPI audio capture thread and provider selection (System/Off).
+  * `audio_analysis.*`: Performs FFT, calculates volume, bands, beat detection. SSE SIMD paths with scalar fallback; Hann and band mapping caches; TempoWorker for BPM.
   * `uniform_manager.*`: Manages updating shader uniforms via the ReShade API.
   * `overlay.*`: Renders the ImGui debug overlay.
   * `logging.*`: Simple thread-safe logging.
   * `listeningway_addon.cpp`: Main addon entry point, event handling, initialization.
-  * `settings.*`: Loads/saves settings from `.json`, holds the `ListeningwaySettings` struct.
+  * `configuration/*`: Loads/saves settings from `.json`, applies to live systems.
 
 **Dependencies & Credits:**
 
@@ -426,6 +432,7 @@ For most users, the defaults work well! Tweak only if you want to optimize for a
 
   * All dependencies (like KissFFT) are linked statically; no extra DLLs needed beside the `.addon` file.
   * Check the ReShade log file (`ReShade.log` or `d3d11.log` etc. in game dir) for any addon errors.
+  * A local `listeningway.log` is also written next to your settings; enable debug logging in the overlay to see DEBUG entries.
   * If you change the number of frequency bands (`NumBands` in `.json`), you MUST update it in `settings.h` (`DEFAULT_NUM_BANDS`) AND adjust your shader code (array sizes, uniform source annotations if needed) accordingly\! Same applies if adding new uniforms.
   * Doxygen documentation can be generated using the `Doxyfile` in `third_party/reshade`.
 

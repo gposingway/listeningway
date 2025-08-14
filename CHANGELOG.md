@@ -5,6 +5,28 @@ All notable changes to Listeningway will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+- Resolved freezes when switching Audio Analysis provider from System → Off → System.
+  - Off now clears all analysis data immediately (no frozen visuals).
+  - Provider dropdown remains interactive during switching; no UI lockout.
+  - Cold-start logic added when returning from Off to ensure analyzer/capture restarts.
+- Default provider selection now respects the provider marked `is_default` (System Audio).
+
+### Added
+- Runtime toggle for SIMD-accelerated analysis (SSE path with scalar fallback).
+- Performance modules and caching:
+  - SPSC ring buffer between capture and analysis.
+  - Hann window and FFT/band mapping cache reuse.
+  - Background TempoWorker for BPM estimation.
+- Beat Profiles with a Custom option; removed legacy per-parameter beat UI clutter.
+
+### Changed
+- Overlay provider selection now binds to `audio.captureProviderCode` and stays enabled during transitions.
+- “Off” provider explicitly zeros tempo/beat/pan/format/volumes to avoid stale display.
+- Documentation refreshed: provider model, SIMD toggle, configuration fields, and module READMEs.
+
 ## [1.2.0.3] - 2025-06-07
 
 ### New Features

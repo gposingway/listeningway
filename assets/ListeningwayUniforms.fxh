@@ -10,7 +10,7 @@
 // - Example: Access frequency bands with Listeningway_FreqBands[0] (bass) to [N-1] (treble).
 // - See README.md for more details and practical examples.
 
-#define LISTENINGWAY_NUM_BANDS 64
+#define LISTENINGWAY_NUM_BANDS 32
 #define LISTENINGWAY_INSTALLED 1
 
 // Annotation-based (required)
