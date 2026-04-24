@@ -4,12 +4,20 @@
 // ---------------------------------------------
 #include "uniform_manager.h"
 #include <string_view>
+#include <algorithm>
+#include "constants.h" // DEFAULT_NUM_BANDS
 #include "settings.h" // Include settings header for g_settings
 
 void UniformManager::update_uniforms(reshade::api::effect_runtime* runtime, float volume, const std::vector<float>& freq_bands, float beat,
     float time_seconds, float phase_60hz, float phase_120hz, float total_phases_60hz, float total_phases_120hz,
     float volume_left, float volume_right, float audio_pan, float audio_format,
     const float* dir8, uint32_t dir8_count) {
+    // Clamp the effective band count to DEFAULT_NUM_BANDS — which is also the
+    // compile-time size of the shader-side Listeningway_FreqBands[] array
+    // (build.bat substitutes this constant into ListeningwayUniforms.fxh). If
+    // a user misconfigures num_bands above this, we truncate rather than
+    // overflow the shader uniform.
+    const size_t effective_bands = std::min(freq_bands.size(), DEFAULT_NUM_BANDS);
     // Only update uniforms with the correct annotation (source = ...)
     runtime->enumerate_uniform_variables(nullptr, [&](reshade::api::effect_runtime*, reshade::api::effect_uniform_variable var_handle) {
         char source[64] = "";
@@ -17,9 +25,16 @@ void UniformManager::update_uniforms(reshade::api::effect_runtime* runtime, floa
             if (strcmp(source, "listeningway_volume") == 0) {
                 runtime->set_uniform_value_float(var_handle, &volume, 1);
             } else if (strcmp(source, "listeningway_freqbands") == 0) {
-                if (!freq_bands.empty()) {
-                    runtime->set_uniform_value_float(var_handle, freq_bands.data(), static_cast<uint32_t>(freq_bands.size()));
+                if (effective_bands > 0) {
+                    runtime->set_uniform_value_float(var_handle, freq_bands.data(), static_cast<uint32_t>(effective_bands));
                 }
+            } else if (strcmp(source, "listeningway_numbands") == 0) {
+                // Expose the configured band count so shaders can size their
+                // traversal against the live value instead of guessing against
+                // the fallback array length. Written as a float for uniform
+                // type compatibility; shaders cast to int where needed.
+                float nb = static_cast<float>(effective_bands);
+                runtime->set_uniform_value_float(var_handle, &nb, 1);
             } else if (strcmp(source, "listeningway_beat") == 0) {
                 runtime->set_uniform_value_float(var_handle, &beat, 1);
             } else if (strcmp(source, "listeningway_timeseconds") == 0) {

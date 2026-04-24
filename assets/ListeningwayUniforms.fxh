@@ -10,13 +10,19 @@
 // - Example: Access frequency bands with Listeningway_FreqBands[0] (bass) to [N-1] (treble).
 // - See README.md for more details and practical examples.
 
-#define LISTENINGWAY_NUM_BANDS 32
+#define LISTENINGWAY_NUM_BANDS 64
 #define LISTENINGWAY_INSTALLED 1
 
 // Annotation-based (required)
 uniform float Listeningway_Volume < source = "listeningway_volume"; >;
 uniform float Listeningway_FreqBands[LISTENINGWAY_NUM_BANDS] < source = "listeningway_freqbands"; >;
 uniform float Listeningway_Beat < source = "listeningway_beat"; >;
+// Live band count published by Listeningway. Equals the number of bands the
+// addon is currently producing (the configured setting), which may be less
+// than LISTENINGWAY_NUM_BANDS. Shaders should traverse only the first
+// int(Listeningway_NumBands) entries of Listeningway_FreqBands; entries
+// beyond that are never written and will read as zero / stale.
+uniform float Listeningway_NumBands < source = "listeningway_numbands"; > = float(LISTENINGWAY_NUM_BANDS);
 
 // Time uniforms (added)
 uniform float Listeningway_TimeSeconds < source = "listeningway_timeseconds"; >;

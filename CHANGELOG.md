@@ -6,6 +6,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
+- Added: `Listeningway_NumBands` uniform (`source = "listeningway_numbands"`) that publishes the live number of frequency bands Listeningway is currently producing. Shaders can now iterate `Listeningway_FreqBands` up to `int(Listeningway_NumBands)` instead of inferring the count from the array's compile-time size, which makes effects correct when users change the `num_bands` setting.
+- Changed: `DEFAULT_NUM_BANDS` in `src/core/constants.h` is now **64** (was 32) and doubles as the compile-time size of the shader-side `Listeningway_FreqBands[]` array. `build.bat` extracts this value at build time and substitutes it into `ListeningwayUniforms.fxh`, so the C++ constant is the single source of truth — editing it here and rebuilding is the only action required to change the band count across both the addon and the shaders. The build aborts with a clear error if the constant can't be read. `UniformManager::update_uniforms` clamps runtime `num_bands` to `DEFAULT_NUM_BANDS` so a misconfigured setting cannot overrun the shader uniform array.
 - Added: Directional intensity uniforms (Listeningway_Direction8 and FRBL aliases) with mono/stereo/surround mapping, plus overlay rose diagram.
 - Added: Split Amplifier controls (Volume/Bands/Direction) with distinct UI colors; boosts apply to uniforms and overlay visuals only.
 

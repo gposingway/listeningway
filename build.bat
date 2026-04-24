@@ -4,7 +4,26 @@ setlocal
 set RESHADE_SDK_PATH=%CD%\third_party\reshade\include
 
 REM === Generate ListeningwayUniforms.fxh from template ===
-set NUM_BANDS=32
+REM NUM_BANDS is extracted from DEFAULT_NUM_BANDS in src\core\constants.h —
+REM the single source of truth. It defines the compile-time size of the
+REM Listeningway_FreqBands[] array in shaders and is also the runtime
+REM default band count. The live band count the addon is currently
+REM publishing is exposed via the Listeningway_NumBands uniform so shaders
+REM iterate only populated entries.
+set CONSTANTS_H=src\core\constants.h
+if not exist %CONSTANTS_H% (
+    echo Constants file %CONSTANTS_H% not found!
+    exit /b 1
+)
+set NB_TMP=%TEMP%\lw_num_bands.txt
+powershell -NoProfile -Command "$m = Get-Content '%CONSTANTS_H%' | Select-String 'constexpr\s+size_t\s+DEFAULT_NUM_BANDS\s*=\s*(\d+)' | Select-Object -First 1; if ($m) { $m.Matches.Groups[1].Value } else { '' }" > %NB_TMP%
+set /p NUM_BANDS=<%NB_TMP%
+del %NB_TMP%
+if "%NUM_BANDS%"=="" (
+    echo Could not extract DEFAULT_NUM_BANDS from %CONSTANTS_H%!
+    exit /b 1
+)
+echo Using DEFAULT_NUM_BANDS = %NUM_BANDS% from %CONSTANTS_H%
 set TEMPLATE=templates\ListeningwayUniforms.fxh.template
 set OUTPUT=assets\ListeningwayUniforms.fxh
 if exist %TEMPLATE% (

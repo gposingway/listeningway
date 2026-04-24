@@ -133,11 +133,19 @@ Here's the data Listeningway provides:
   </tr>
   <tr>
     <td><strong>Listeningway_FreqBands</strong></td>
-    <td>Amplitude of 32 frequency bands (Index 0 = Low Bass ... Index 31 = High Treble). Great for spectrum visualizations or driving different effects based on frequency.</td>
+    <td>Amplitude of the configured number of frequency bands (Index 0 = Low Bass ... Index N-1 = High Treble, where N = <code>Listeningway_NumBands</code>). Great for spectrum visualizations or driving different effects based on frequency. Entries beyond <code>Listeningway_NumBands</code> are never written and should not be read.</td>
     <td>0.0 to 1.0 (per band)</td>
   </tr>
   <tr>
     <td colspan="3"><code>uniform float Listeningway_FreqBands[32] &lt; source="listeningway_freqbands"; &gt;;</code><br/><br/></td>
+  </tr>
+  <tr>
+    <td><strong>Listeningway_NumBands</strong></td>
+    <td>Live count of how many frequency bands Listeningway is currently publishing (the configured <code>num_bands</code> setting). Cast to <code>int</code> and use as the upper bound when iterating <code>Listeningway_FreqBands</code>. Makes shaders robust to users reconfiguring the band count.</td>
+    <td>8 to 1024 (typical: 32)</td>
+  </tr>
+  <tr>
+    <td colspan="3"><code>uniform float Listeningway_NumBands &lt; source="listeningway_numbands"; &gt;;</code><br/><br/></td>
   </tr>
   <tr>
     <td><strong>Listeningway_Beat</strong></td>

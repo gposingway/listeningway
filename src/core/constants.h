@@ -1,7 +1,8 @@
 #pragma once
 
 // Enums for Magic Numbers - replacing hardcoded constants with named values
-enum class AudioFormat : int {
+enum class AudioFormat : int
+{
     None = 0,
     Mono = 1,
     Stereo = 2,
@@ -9,26 +10,37 @@ enum class AudioFormat : int {
     Surround71 = 8
 };
 
-enum class EqualizerBand : int {
-    Bass = 0,        // Low frequencies
-    LowMid = 1,      // Low-mid frequencies  
-    Mid = 2,         // Mid frequencies
-    HighMid = 3,     // High-mid frequencies
-    Treble = 4       // High frequencies
+enum class EqualizerBand : int
+{
+    Bass = 0,    // Low frequencies
+    LowMid = 1,  // Low-mid frequencies
+    Mid = 2,     // Mid frequencies
+    HighMid = 3, // High-mid frequencies
+    Treble = 4   // High frequencies
 };
 
-enum class BeatDetectionAlgorithm : int {
+enum class BeatDetectionAlgorithm : int
+{
     SimpleEnergy = 0,
     SpectralFluxAuto = 1
 };
 
-enum class AudioCaptureProvider : int {
+enum class AudioCaptureProvider : int
+{
     SystemAudio = 0,
     ProcessAudio = 1
 };
 
 // Audio Analysis
-constexpr size_t DEFAULT_NUM_BANDS = 32;
+// DEFAULT_NUM_BANDS doubles as the compile-time ceiling for the shader-side
+// Listeningway_FreqBands[] array. build.bat extracts this value from
+// constants.h and substitutes it into ListeningwayUniforms.fxh at build
+// time, so editing it here and rebuilding is the only action needed to
+// change the band count across both the addon and the shaders. Runtime
+// user-configured num_bands <= DEFAULT_NUM_BANDS is honoured directly; any
+// value above this is clamped at the uniform boundary to prevent shader
+// array overrun.
+constexpr size_t DEFAULT_NUM_BANDS = 64;
 constexpr size_t DEFAULT_FFT_SIZE = 512;
 constexpr float DEFAULT_FLUX_ALPHA = 0.1f;
 constexpr float DEFAULT_FLUX_THRESHOLD_MULTIPLIER = 1.5f;
@@ -57,7 +69,7 @@ constexpr float DEFAULT_BEAT_TIME_DIVISOR = 0.2f;
 constexpr float DEFAULT_BAND_NORM = 0.1f;
 constexpr float DEFAULT_BAND_MIN_FREQ = 183.0f;
 constexpr float DEFAULT_BAND_MAX_FREQ = 22050.0f;
-constexpr bool  DEFAULT_BAND_LOG_SCALE = true;
+constexpr bool DEFAULT_BAND_LOG_SCALE = true;
 constexpr float DEFAULT_BAND_LOG_STRENGTH = 0.1f;
 
 // 5-Band Equalizer
@@ -70,8 +82,8 @@ constexpr float DEFAULT_EQUALIZER_WIDTH = 0.15f;
 
 // Audio Capture
 // Pan calculation constants
-constexpr float DEFAULT_PAN_BALANCE_DEADZONE = 0.02f; // 2% deadzone around center for balanced audio
-constexpr float DEFAULT_PAN_SILENCE_THRESHOLD = 0.00001f; // Very low threshold for "silence" detection
+constexpr float DEFAULT_PAN_BALANCE_DEADZONE = 0.02f;      // 2% deadzone around center for balanced audio
+constexpr float DEFAULT_PAN_SILENCE_THRESHOLD = 0.00001f;  // Very low threshold for "silence" detection
 constexpr float DEFAULT_PAN_SIGNIFICANT_THRESHOLD = 0.05f; // Threshold for "significant" signal level
 // Pan smoothing (0.0 = no smoothing, higher values = more smoothing)
 constexpr float DEFAULT_PAN_SMOOTHING = 0.1f; // Default: no smoothing to preserve current behavior
@@ -82,14 +94,14 @@ constexpr float DEFAULT_PAN_OFFSET = 0.0f;
 constexpr float DEFAULT_CAPTURE_STALE_TIMEOUT = 1.5f;
 
 // Global feature flags
-constexpr bool DEFAULT_AUDIO_ANALYSIS_ENABLED = true;  // Audio analysis enabled by default
-constexpr bool DEFAULT_DEBUG_ENABLED = false;          // Debug logging disabled by default
+constexpr bool DEFAULT_AUDIO_ANALYSIS_ENABLED = true; // Audio analysis enabled by default
+constexpr bool DEFAULT_DEBUG_ENABLED = false;         // Debug logging disabled by default
 
 // Overlay/ImGui UI element constants (bar heights, spacings, colors, etc.)
-constexpr float OVERLAY_BAR_HEIGHT_THIN = 6.0f;           // Thin bar height for frequency bands and left/right bars
-constexpr float OVERLAY_BAR_SPACING_SMALL = 2.0f;         // Small gap between left/right bars
-constexpr float OVERLAY_BAR_SPACING_LARGE = 4.0f;         // Spacing after bars
-constexpr float OVERLAY_BAR_ROUNDING = 0.0f;              // No rounding for bars
+constexpr float OVERLAY_BAR_HEIGHT_THIN = 6.0f;             // Thin bar height for frequency bands and left/right bars
+constexpr float OVERLAY_BAR_SPACING_SMALL = 2.0f;           // Small gap between left/right bars
+constexpr float OVERLAY_BAR_SPACING_LARGE = 4.0f;           // Spacing after bars
+constexpr float OVERLAY_BAR_ROUNDING = 0.0f;                // No rounding for bars
 constexpr float OVERLAY_BAR_CENTER_MARKER_THICKNESS = 1.0f; // Center marker line thickness
 
 // Overlay/ImGui color constants (use ImGui::GetColorU32 or IM_COL32)
