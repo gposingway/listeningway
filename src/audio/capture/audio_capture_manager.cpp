@@ -6,6 +6,7 @@
 #include "audio/capture/providers/audio_capture_provider_system.h"
 #include "audio/capture/providers/audio_capture_provider_off.h"
 #include "../utils/logging.h"
+#include "../utils/debug_notes.h"
 #include "../core/thread_safety_manager.h"
 #include <algorithm>
 #include <climits>
@@ -22,10 +23,16 @@ AudioCaptureManager::~AudioCaptureManager() {
 
 bool AudioCaptureManager::Initialize() {
     if (initialized_) {
+        if (Listeningway::ConfigurationManager::Snapshot().debug.debugEnabled) {
+            DebugNotes::Add("ACM.Initialize: already initialized");
+        }
         return true;
     }
 
     LOG_DEBUG("[AudioCaptureManager] Initializing audio capture manager");
+    if (Listeningway::ConfigurationManager::Snapshot().debug.debugEnabled) {
+        DebugNotes::Add("ACM.Initialize: begin");
+    }
     
     RegisterProviders();
     
@@ -51,10 +58,16 @@ bool AudioCaptureManager::Initialize() {
     current_provider_ = SelectBestProvider();
     if (!current_provider_) {
         LOG_ERROR("[AudioCaptureManager] No available audio capture providers");
+        if (Listeningway::ConfigurationManager::Snapshot().debug.debugEnabled) {
+            DebugNotes::Add("ACM.Initialize: no providers available");
+        }
         return false;
     }
     
     LOG_INFO("[AudioCaptureManager] Initialized with provider: " + current_provider_->GetProviderName());
+    if (Listeningway::ConfigurationManager::Snapshot().debug.debugEnabled) {
+        DebugNotes::Add(std::string("ACM.Initialized with ") + current_provider_->GetProviderInfo().code);
+    }
     initialized_ = true;
     return true;
 }
@@ -62,7 +75,11 @@ bool AudioCaptureManager::Initialize() {
 void AudioCaptureManager::Uninitialize() {
     if (!initialized_) {
         return;
-    }    LOG_DEBUG("[AudioCaptureManager] Uninitializing audio capture manager");
+    }
+    LOG_DEBUG("[AudioCaptureManager] Uninitializing audio capture manager");
+    if (Listeningway::ConfigurationManager::Snapshot().debug.debugEnabled) {
+        DebugNotes::Add("ACM.Uninitialize");
+    }
     
     current_provider_ = nullptr;
     
@@ -276,17 +293,27 @@ bool AudioCaptureManager::StartCapture(const Listeningway::Configuration& config
                                       AudioAnalysisData& data) {
     if (!initialized_ || !current_provider_) {
         LOG_ERROR("[AudioCaptureManager] Cannot start capture - not initialized or no provider");
+        if (Listeningway::ConfigurationManager::Snapshot().debug.debugEnabled) {
+            DebugNotes::Add("ACM.StartCapture: not initialized or no provider");
+        }
         return false;
     }
     
     LOG_DEBUG("[AudioCaptureManager] Starting capture with provider: " + current_provider_->GetProviderName());
-    return current_provider_->StartCapture(config, running, thread, data);
+    bool ok = current_provider_->StartCapture(config, running, thread, data);
+    if (Listeningway::ConfigurationManager::Snapshot().debug.debugEnabled) {
+        DebugNotes::Add(std::string("ACM.StartCapture -> ") + (ok ? "OK" : "FAIL"));
+    }
+    return ok;
 }
 
 void AudioCaptureManager::StopCapture(std::atomic_bool& running, std::thread& thread) {
     if (current_provider_) {
         LOG_DEBUG("[AudioCaptureManager] Stopping capture");
         current_provider_->StopCapture(running, thread);
+        if (Listeningway::ConfigurationManager::Snapshot().debug.debugEnabled) {
+            DebugNotes::Add("ACM.StopCapture");
+        }
     }
 }
 
@@ -304,21 +331,31 @@ void AudioCaptureManager::CheckAndRestartCapture(const Listeningway::Configurati
         StopCapture(running, thread);
         current_provider_->ResetRestartFlags();
         StartCapture(config, running, thread, data);
+        if (Listeningway::ConfigurationManager::Snapshot().debug.debugEnabled) {
+            DebugNotes::Add("ACM.Check: provider restart");
+        }
         return;
     }
     
     // Check if we should switch to a different provider
-    IAudioCaptureProvider* best_provider = SelectBestProvider();    if (best_provider && best_provider != current_provider_) {
+    IAudioCaptureProvider* best_provider = SelectBestProvider();
+    if (best_provider && best_provider != current_provider_) {
         LOG_INFO("[AudioCaptureManager] Switching to better provider: " + best_provider->GetProviderName());
         StopCapture(running, thread);
         current_provider_ = best_provider;
         StartCapture(config, running, thread, data);
+        if (Listeningway::ConfigurationManager::Snapshot().debug.debugEnabled) {
+            DebugNotes::Add(std::string("ACM.Check: switched -> ") + best_provider->GetProviderInfo().code);
+        }
     }
 }
 
 // Implementation of the new audio system lifecycle management methods
 bool AudioCaptureManager::RestartAudioSystem(const Listeningway::Configuration& config) {
     LOG_DEBUG("[AudioCaptureManager] Restarting audio system with new configuration");
+    if (Listeningway::ConfigurationManager::Snapshot().debug.debugEnabled) {
+        DebugNotes::Add("ACM.RestartAudioSystem");
+    }
       // Get access to global audio system variables
     extern std::atomic_bool g_audio_thread_running;
     extern std::thread g_audio_thread;
@@ -331,6 +368,9 @@ bool AudioCaptureManager::RestartAudioSystem(const Listeningway::Configuration& 
         if (was_running) {
             LOG_DEBUG("[AudioCaptureManager] Stopping current audio capture");
             StopCapture(g_audio_thread_running, g_audio_thread);
+            if (Listeningway::ConfigurationManager::Snapshot().debug.debugEnabled) {
+                DebugNotes::Add("ACM.Restart: stopped capture");
+            }
         }
         
         // Stop the analyzer
@@ -342,13 +382,22 @@ bool AudioCaptureManager::RestartAudioSystem(const Listeningway::Configuration& 
         // Start the analyzer with new config
         LOG_DEBUG("[AudioCaptureManager] Starting audio analyzer");
         g_audio_analyzer.Start();
+        if (Listeningway::ConfigurationManager::Snapshot().debug.debugEnabled) {
+            DebugNotes::Add("ACM.Restart: analyzer started");
+        }
         
         // Restart capture if it was running
         if (was_running) {
             LOG_DEBUG("[AudioCaptureManager] Restarting audio capture");
             if (!StartCapture(config, g_audio_thread_running, g_audio_thread, g_audio_data)) {
                 LOG_ERROR("[AudioCaptureManager] Failed to restart audio capture");
+                if (Listeningway::ConfigurationManager::Snapshot().debug.debugEnabled) {
+                    DebugNotes::Add("ACM.Restart: StartCapture FAIL");
+                }
                 return false;
+            }
+            if (Listeningway::ConfigurationManager::Snapshot().debug.debugEnabled) {
+                DebugNotes::Add("ACM.Restart: StartCapture OK");
             }
         }
         
@@ -356,15 +405,24 @@ bool AudioCaptureManager::RestartAudioSystem(const Listeningway::Configuration& 
         return true;
     } catch (const std::exception& ex) {
         LOG_ERROR("[AudioCaptureManager] Exception during audio system restart: " + std::string(ex.what()));
+        if (Listeningway::ConfigurationManager::Snapshot().debug.debugEnabled) {
+            DebugNotes::Add("ACM.Restart: exception");
+        }
         return false;
     } catch (...) {
         LOG_ERROR("[AudioCaptureManager] Unknown exception during audio system restart");
+        if (Listeningway::ConfigurationManager::Snapshot().debug.debugEnabled) {
+            DebugNotes::Add("ACM.Restart: unknown exception");
+        }
         return false;
     }
 }
 
 void AudioCaptureManager::StopAudioSystem() {
     LOG_DEBUG("[AudioCaptureManager] Stopping audio system");
+    if (Listeningway::ConfigurationManager::Snapshot().debug.debugEnabled) {
+        DebugNotes::Add("ACM.StopAudioSystem");
+    }
     
     // Get access to global audio system variables
     extern std::atomic_bool g_audio_thread_running;
@@ -373,7 +431,7 @@ void AudioCaptureManager::StopAudioSystem() {
     
     try {
         // Stop capture if running
-        if (g_audio_thread_running.load()) {
+    if (g_audio_thread_running.load()) {
             LOG_DEBUG("[AudioCaptureManager] Stopping audio capture");
             StopCapture(g_audio_thread_running, g_audio_thread);
         }
@@ -385,13 +443,22 @@ void AudioCaptureManager::StopAudioSystem() {
         LOG_DEBUG("[AudioCaptureManager] Audio system stopped successfully");
     } catch (const std::exception& ex) {
         LOG_ERROR("[AudioCaptureManager] Exception during audio system stop: " + std::string(ex.what()));
+        if (Listeningway::ConfigurationManager::Snapshot().debug.debugEnabled) {
+            DebugNotes::Add("ACM.Stop: exception");
+        }
     } catch (...) {
         LOG_ERROR("[AudioCaptureManager] Unknown exception during audio system stop");
+        if (Listeningway::ConfigurationManager::Snapshot().debug.debugEnabled) {
+            DebugNotes::Add("ACM.Stop: unknown exception");
+        }
     }
 }
 
 bool AudioCaptureManager::ApplyConfiguration(const Listeningway::Configuration& config) {
     LOG_DEBUG("[AudioCaptureManager] Applying new configuration to audio system");
+    if (Listeningway::ConfigurationManager::Snapshot().debug.debugEnabled) {
+        DebugNotes::Add("ACM.ApplyConfiguration");
+    }
     extern std::atomic_bool g_audio_thread_running;
     extern std::thread g_audio_thread;
     extern AudioAnalysisData g_audio_data;
@@ -412,7 +479,7 @@ bool AudioCaptureManager::ApplyConfiguration(const Listeningway::Configuration& 
     }
     // If switching from capture to none, stop and clear data
     if (last_activates_capture && !activates_capture) {
-        if (g_audio_thread_running.load()) {
+    if (g_audio_thread_running.load()) {
             LOG_DEBUG("[AudioCaptureManager] Switching to non-capturing provider, stopping audio system");
             StopAudioSystem();
         }
@@ -424,7 +491,7 @@ bool AudioCaptureManager::ApplyConfiguration(const Listeningway::Configuration& 
     }
     // If switching from none to capture, start system
     if (!last_activates_capture && activates_capture) {
-        LOG_DEBUG("[AudioCaptureManager] Switching to capturing provider, starting audio system");
+    LOG_DEBUG("[AudioCaptureManager] Switching to capturing provider, starting audio system");
     Listeningway::ConfigurationManager::Instance().SetAnalysisEnabled(true);
     g_audio_analyzer.Start();
         if (!StartCapture(config, g_audio_thread_running, g_audio_thread, g_audio_data)) {
@@ -438,7 +505,7 @@ bool AudioCaptureManager::ApplyConfiguration(const Listeningway::Configuration& 
     // If audio analysis is disabled in config, stop the system
     bool was_running = g_audio_thread_running.load();
     if (!config.audio.analysisEnabled) {
-        if (was_running) {
+    if (was_running) {
             LOG_DEBUG("[AudioCaptureManager] Audio analysis disabled in config, stopping system");
             StopAudioSystem();
         }
@@ -447,7 +514,7 @@ bool AudioCaptureManager::ApplyConfiguration(const Listeningway::Configuration& 
     }
     // If audio was not running but should be enabled, start it
     if (!was_running && config.audio.analysisEnabled) {
-        LOG_DEBUG("[AudioCaptureManager] Audio analysis enabled in config, starting system");
+    LOG_DEBUG("[AudioCaptureManager] Audio analysis enabled in config, starting system");
         g_audio_analyzer.Start();
         if (!StartCapture(config, g_audio_thread_running, g_audio_thread, g_audio_data)) {
             LOG_ERROR("[AudioCaptureManager] Failed to start audio capture");
@@ -461,7 +528,11 @@ bool AudioCaptureManager::ApplyConfiguration(const Listeningway::Configuration& 
     if (was_running) {
         LOG_DEBUG("[AudioCaptureManager] Restarting audio system to apply configuration changes");
         last_activates_capture = activates_capture;
-        return RestartAudioSystem(config);
+        bool ok = RestartAudioSystem(config);
+        if (Listeningway::ConfigurationManager::Snapshot().debug.debugEnabled) {
+            DebugNotes::Add(std::string("ACM.Apply: restart -> ") + (ok ? "OK" : "FAIL"));
+        }
+        return ok;
     }
     LOG_DEBUG("[AudioCaptureManager] Configuration applied successfully");
     last_activates_capture = activates_capture;
