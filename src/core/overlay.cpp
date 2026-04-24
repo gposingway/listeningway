@@ -16,6 +16,7 @@
 #include "audio/capture/audio_capture.h"
 #include "configuration/configuration_manager.h"
 #include "beat_settings_panel.h"
+#include "utils/debug_notes.h"
 using Listeningway::ConfigurationManager;
 #include <windows.h>
 #include <shellapi.h>
@@ -160,6 +161,18 @@ static void DrawLogInfo() {
             ShellExecuteA(nullptr, "open", logPath.c_str(), nullptr, nullptr, SW_SHOWNORMAL);
         }
         ImGui::Text("(Click to open log file)");
+        // Debug notes copy/paste area
+        ImGui::Text("Debug Notes (copy/paste):");
+        std::string notes = DebugNotes::GetAll();
+        ImGuiInputTextFlags flags = ImGuiInputTextFlags_ReadOnly | ImGuiInputTextFlags_AutoSelectAll;
+        ImGui::InputTextMultiline("##DebugNotes", (char*)notes.c_str(), notes.size()+1, ImVec2(-1, 120), flags);
+        if (ImGui::Button("Copy Notes")) {
+            ImGui::SetClipboardText(notes.c_str());
+        }
+        ImGui::SameLine();
+        if (ImGui::Button("Clear Notes")) {
+            DebugNotes::Clear();
+        }
     }
 }
 

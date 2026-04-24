@@ -45,6 +45,7 @@ add_library(${PROJECT_NAME} SHARED
     src/audio/analysis/beat_profiles.cpp src/audio/analysis/beat_profiles.h
     src/core/thread_safety_manager.cpp src/core/thread_safety_manager.h
     src/utils/logging.cpp src/utils/logging.h
+    src/utils/debug_notes.cpp src/utils/debug_notes.h
     src/core/uniform_manager.cpp src/core/uniform_manager.h
     src/core/settings.cpp src/core/settings.h    src/configuration/configuration_manager.cpp src/configuration/configuration_manager.h
     src/configuration/Configuration.cpp src/configuration/Configuration.h
