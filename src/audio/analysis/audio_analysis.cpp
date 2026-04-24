@@ -20,9 +20,12 @@ using Listeningway::ConfigurationManager;
 #include <complex>
 #include <sstream>
 #include "fft_engine.h"
+#include "channel_layout.h"
 #if defined(_M_X64) || defined(__x86_64__) || defined(__SSE__)
 #include <immintrin.h>
 #endif
+#include "../utils/debug_notes.h"
+#include <chrono>
 
 // Simple format function for numeric values
 std::string formatFloat(float value, int precision = 6) {
@@ -37,6 +40,8 @@ AudioAnalyzer g_audio_analyzer;
 
 // Standard standalone function to analyze audio buffers (used by audio_capture.cpp)
 void AnalyzeAudioBuffer(const float* data, size_t numFrames, size_t numChannels, AudioAnalysisData& out) {
+    using clock = std::chrono::steady_clock;
+    auto t_start = clock::now();
     const auto config = Listeningway::ConfigurationManager::Snapshot(); // Thread-safe snapshot for audio capture threads
     // Reset directional intensities each frame
     out.direction8 = {0.0f,0.0f,0.0f,0.0f,0.0f,0.0f,0.0f,0.0f};
@@ -54,21 +59,37 @@ void AnalyzeAudioBuffer(const float* data, size_t numFrames, size_t numChannels,
             ", SampleRange=[" + std::to_string(sample_min) + ", " + std::to_string(sample_max) + "]");
     }
       // Calculate volume (RMS)
+    // Master volume: compute both mean absolute amplitude and RMS in a single pass
+    float abs_sum = 0.0f;
     float sum_squares = 0.0f;
+    const size_t total_samples = std::max<size_t>(1, numFrames * numChannels);
     for (size_t i = 0; i < numFrames * numChannels; i++) {
-        sum_squares += data[i] * data[i];
+        float v = data[i];
+        abs_sum += std::fabs(v);
+        sum_squares += v * v;
     }
-    float rms = std::sqrt(sum_squares / (numFrames * numChannels));
-    out.volume = std::min(1.0f, rms * config.frequency.amplifier); // Use amplifier for normalization
+    float mean_abs = abs_sum / total_samples;
+    float rms = std::sqrt(sum_squares / total_samples);
+    out.volume = std::min(1.0f, mean_abs * config.frequency.amplifier);
+
+    // Periodic debug notes for overlay (rate-limited to ~1s)
+    if (config.debug.debugEnabled) {
+        static thread_local clock::time_point last_dbg = clock::now();
+        auto now = clock::now();
+        if (now - last_dbg > std::chrono::seconds(1)) {
+            DebugNotes::Add(std::string("ANL: frames=") + std::to_string(numFrames) +
+                            ", ch=" + std::to_string(numChannels) +
+                            ", vol=" + formatFloat(out.volume, 4));
+            last_dbg = now;
+        }
+    }
     
     // DEBUG: Check for potential numerical issues
     static int numerical_debug_counter = 0;
-    if (++numerical_debug_counter % 500 == 0 && sum_squares > 0.0f) {
-        float avg_square = sum_squares / (numFrames * numChannels);        LOG_INFO("[NUMERICAL_DEBUG] SumSquares=" + std::to_string(sum_squares) + 
-            ", AvgSquare=" + std::to_string(avg_square) + 
-            ", RMS=" + std::to_string(rms) + 
-            ", FinalVol=" + std::to_string(out.volume) + 
-            ", Amp=" + std::to_string(config.frequency.amplifier));
+    if (++numerical_debug_counter % 500 == 0) {
+        LOG_INFO("[NUMERICAL_DEBUG] MeanAbs=" + std::to_string(mean_abs) +
+                 ", FinalVol=" + std::to_string(out.volume) +
+                 ", Amp=" + std::to_string(config.frequency.amplifier));
         
         // Check for extreme values
         if (rms > 1.0f) {
@@ -160,6 +181,8 @@ void AnalyzeAudioBuffer(const float* data, size_t numFrames, size_t numChannels,
             tl_magnitudes[i] = std::sqrt(r * r + im * im);
         }
     }
+
+    
     
     // Calculate spectral flux (difference from previous magnitudes)
     float flux = 0.0f;
@@ -405,6 +428,8 @@ void AnalyzeAudioBuffer(const float* data, size_t numFrames, size_t numChannels,
             out.freq_bands[band] *= gain;
         }
     }
+
+    
     
     // --- Audio Spatialization: Calculate left/right volume and pan ---
     // Calculate per-channel RMS for left/right (and pan)
@@ -453,19 +478,54 @@ void AnalyzeAudioBuffer(const float* data, size_t numFrames, size_t numChannels,
                     count_center++;
                 }
                 if (AudioFormatUtils::IsSideChannel(format, ch)) {
-                    if (ch == 4 || ch == 6) { // SL channels
+                    // Use layout hint to classify indices for 7.1 rather than fixed indices
+                    bool isLeftSide = false, isRightSide = false;
+                    if (numChannels == 8) {
+                        using namespace lw::audio::analysis;
+                        auto layout = GetLayout71();
+                        // ITU-R order baseline after LFE
+                        // Surround: SL(4), SR(5), BL(6), BR(7)
+                        // Classic:  BL(4), BR(5), SL(6), SR(7)
+                        if (layout == Layout71::Surround || layout == Layout71::Unknown) {
+                            isLeftSide = (ch == 4);
+                            isRightSide = (ch == 5);
+                        } else {
+                            isLeftSide = (ch == 6);
+                            isRightSide = (ch == 7);
+                        }
+                    } else {
+                        isLeftSide = (ch == 4);
+                        isRightSide = (ch == 5);
+                    }
+                    if (isLeftSide) {
                         sum_side_left += sample * sample;
                         count_side_left++;
-                    } else { // SR channels
+                    } else if (isRightSide) { // SR channels
                         sum_side_right += sample * sample;
                         count_side_right++;
                     }
                 }
                 if (AudioFormatUtils::IsRearChannel(format, ch)) {
-                    if (ch == 4) { // RL
+                    // Use layout hint to classify indices for 7.1 rather than fixed indices
+                    bool isRearLeft = false, isRearRight = false;
+                    if (numChannels == 8) {
+                        using namespace lw::audio::analysis;
+                        auto layout = GetLayout71();
+                        if (layout == Layout71::Surround || layout == Layout71::Unknown) {
+                            isRearLeft = (ch == 6);
+                            isRearRight = (ch == 7);
+                        } else {
+                            isRearLeft = (ch == 4);
+                            isRearRight = (ch == 5);
+                        }
+                    } else {
+                        isRearLeft = (ch == 4);
+                        isRearRight = (ch == 5);
+                    }
+                    if (isRearLeft) { // RL
                         sum_rear_left += sample * sample;
                         count_rear_left++;
-                    } else { // RR
+                    } else if (isRearRight) { // RR
                         sum_rear_right += sample * sample;
                         count_rear_right++;
                     }
@@ -764,14 +824,25 @@ void AnalyzeAudioBuffer(const float* data, size_t numFrames, size_t numChannels,
         // Small contribution to Back from sides for ambience
         add_dir(4, (rms_side_left + rms_side_right) * 0.2f);
     } else if (numChannels == 8) {
-        // 7.1: FL, FR, C, LFE, RL, RR, SL, SR (per AudioFormatUtils mapping)
+        // 7.1 mapping depends on layout variant (hint from provider)
+        using namespace lw::audio::analysis;
+        auto layout = GetLayout71();
         add_dir(7, rms_left);            // FL -> Front-Left
         add_dir(1, rms_right);           // FR -> Front-Right
         add_dir(0, rms_center);          // C -> Front
-        add_dir(5, rms_rear_left);       // RL -> Back-Left
-        add_dir(3, rms_rear_right);      // RR -> Back-Right
-        add_dir(6, rms_side_left);       // SL -> Left
-        add_dir(2, rms_side_right);      // SR -> Right
+        if (layout == Layout71::Surround || layout == Layout71::Unknown) {
+            // Common Windows order: SL, SR, BL, BR after LFE
+            add_dir(6, rms_side_left);       // SL -> Left
+            add_dir(2, rms_side_right);      // SR -> Right
+            add_dir(5, rms_rear_left);       // BL -> Back-Left
+            add_dir(3, rms_rear_right);      // BR -> Back-Right
+        } else {
+            // Classic order: BL, BR, SL, SR after LFE
+            add_dir(5, rms_rear_left);       // BL -> Back-Left
+            add_dir(3, rms_rear_right);      // BR -> Back-Right
+            add_dir(6, rms_side_left);       // SL -> Left
+            add_dir(2, rms_side_right);      // SR -> Right
+        }
         // Back center approximated by average rear energy
         add_dir(4, 0.5f * (rms_rear_left + rms_rear_right));
     } else {
@@ -838,6 +909,18 @@ void AnalyzeAudioBuffer(const float* data, size_t numFrames, size_t numChannels,
         std::fill(out.freq_bands.begin(), out.freq_bands.end(), 0.0f);
         out.beat = 0.0f;
     out.direction8 = {0.0f,0.0f,0.0f,0.0f,0.0f,0.0f,0.0f,0.0f};
+    }
+
+    // Timing: report slow analysis frames or periodic timing when debug enabled
+    if (config.debug.debugEnabled) {
+        auto t_end = clock::now();
+        auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(t_end - t_start).count();
+        static thread_local clock::time_point last_time_log = clock::now();
+        bool slow = ms > 10; // threshold for a single analysis step
+        if (slow || (t_end - last_time_log > std::chrono::seconds(2))) {
+            DebugNotes::Add(std::string("ANL.time: ") + std::to_string(ms) + " ms (SIMD=" + (ConfigurationManager::Snapshot().audio.simdEnabled ? "on" : "off") + ")");
+            last_time_log = t_end;
+        }
     }
 }
 
