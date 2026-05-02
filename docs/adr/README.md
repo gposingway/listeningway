@@ -32,6 +32,7 @@ ADRs follow [MADR](https://adr.github.io/madr/) structure:
 | [0008](0008-language-and-dependencies.md) | Language and dependencies — C++20, vcpkg-pinned libraries | Accepted |
 | [0009](0009-process-audio-source.md) | ProcessAudioSource — per-process loopback for game-only isolation | Accepted |
 | [0010](0010-network-outputs.md) | Network outputs and the `IOutputConsumer` abstraction | Accepted |
+| [0011](0011-osc-output.md) | OSC output consumer — tinyosc embed + address schema | Accepted |
 
 ## Reading order for new contributors
 

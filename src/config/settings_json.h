@@ -47,8 +47,16 @@ NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE_WITH_DEFAULT(LoudnessConfig, window_ms)
 NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE_WITH_DEFAULT(DebugConfig,
     debug_logging, overlay_enabled)
 
+NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE_WITH_DEFAULT(OscConfig,
+    enabled, host, port, rate_hz)
+
+NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE_WITH_DEFAULT(OpenRgbConfig,
+    enabled, host, port, rate_hz, brightness)
+
+NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE_WITH_DEFAULT(NetworkConfig, osc, openrgb)
+
 NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE_WITH_DEFAULT(Settings,
     schema_version,
-    audio, beat, frequency, agc, chronotensity, loudness, debug)
+    audio, beat, frequency, agc, chronotensity, loudness, debug, network)
 
 }  // namespace lw::config

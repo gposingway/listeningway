@@ -4,4 +4,6 @@
 /deps
 /vcpkg_installed
 /tools
-/third_party
+/third_party/*
+# Vendored dependencies are tracked; clones from prepare.bat are not.
+!/third_party/tinyosc/

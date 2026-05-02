@@ -100,6 +100,35 @@ struct DebugConfig {
     bool overlay_enabled = false;
 };
 
+/// OSC sender (Open Sound Control). Off by default; on enable, sends
+/// messages mirroring the shader uniform names ("/listeningway/volume",
+/// "/listeningway/freqbands", ...) to host:port at rate_hz.
+/// Send-only — no port is opened on this machine.
+struct OscConfig {
+    bool        enabled = false;
+    std::string host    = "127.0.0.1";
+    int         port    = 9000;        ///< TouchDesigner default
+    int         rate_hz = 60;          ///< clamp 1..120
+};
+
+/// OpenRGB client. Off by default; on enable, connects as a TCP client to
+/// an OpenRGB server (typically running on the local machine), enumerates
+/// controllers, and pushes per-LED frames at rate_hz. Listening port is
+/// NOT opened on this machine — we are the client.
+struct OpenRgbConfig {
+    bool        enabled    = false;
+    std::string host       = "127.0.0.1";
+    int         port       = 6742;     ///< OpenRGB server default
+    int         rate_hz    = 30;       ///< clamp 5..60 (server has wake-up issues above 60)
+    float       brightness = 1.0f;     ///< 0..1 global multiplier
+};
+
+/// Network outputs umbrella.
+struct NetworkConfig {
+    OscConfig     osc;
+    OpenRgbConfig openrgb;
+};
+
 /// Top-level settings POD. Every persisted tunable lives here. Runtime state
 /// (sample rate detected at capture, current beat detector state, etc.) does
 /// NOT live here.
@@ -113,6 +142,7 @@ struct Settings {
     ChronotensityConfig chronotensity;
     LoudnessConfig      loudness;
     DebugConfig         debug;
+    NetworkConfig       network;
 };
 
 }  // namespace lw::config

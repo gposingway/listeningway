@@ -4,7 +4,7 @@ if(POLICY CMP0091)
     cmake_policy(SET CMP0091 NEW)
 endif()
 
-project(Listeningway VERSION 2.0.0 LANGUAGES CXX)
+project(Listeningway VERSION 2.0.0 LANGUAGES C CXX)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -90,12 +90,18 @@ add_library(${PROJECT_NAME} SHARED
     src/output/consumer_registry.cpp
     src/output/uniform_publisher_consumer.h
     src/output/uniform_publisher_consumer.cpp
+    src/output/osc_consumer.h
+    src/output/osc_consumer.cpp
 
     # Overlay (ImGui)
     src/overlay/overlay.h
     src/overlay/overlay.cpp
     src/overlay/overlay_consumer.h
     src/overlay/overlay_consumer.cpp
+
+    # Vendored libraries (third_party)
+    third_party/tinyosc/tinyosc.c
+    third_party/tinyosc/tinyosc.h
 
     # Resource file (version info)
     assets/listeningway.rc
@@ -105,6 +111,7 @@ target_include_directories(${PROJECT_NAME} PRIVATE
     ${RESHADE_SDK_PATH}
     ${CMAKE_SOURCE_DIR}/src
     ${CMAKE_SOURCE_DIR}/third_party/reshade/deps/imgui
+    ${CMAKE_SOURCE_DIR}/third_party/tinyosc
 )
 
 target_compile_definitions(${PROJECT_NAME} PRIVATE
@@ -120,6 +127,7 @@ target_link_libraries(${PROJECT_NAME} PRIVATE
     Propsys
     Avrt
     Mmdevapi
+    Ws2_32
 )
 
 if(MSVC)
@@ -132,6 +140,10 @@ if(MSVC)
     )
     set_target_properties(${PROJECT_NAME} PROPERTIES
         LINK_FLAGS "/NODEFAULTLIB:LIBCMT")
+
+    # Vendored libraries: relax /W4 because we don't control upstream warnings.
+    set_source_files_properties(third_party/tinyosc/tinyosc.c
+        PROPERTIES COMPILE_OPTIONS "/W3")
 endif()
 
 # --- Tests ---------------------------------------------------------------
