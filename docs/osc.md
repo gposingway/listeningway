@@ -100,7 +100,7 @@ Any tool with a stdlib-quality OSC parser will work. Point it at `127.0.0.1:9000
 
 ## Limitations
 
-- **No live `host` / `port` rebinding.** Changing host or port requires toggling the consumer off and on. The alternative (rebinding the socket on every settings version bump) trades reliability for ergonomics, and Listeningway picks reliability.
+- **No live `host` / `port` rebinding.** Changing host or port requires toggling the consumer off and on.
 - **Send-only.** OSC is a bidirectional protocol; an incoming control-surface path could land later but isn't there in v2.x.
 - **No bundles.** Slight per-tick UDP overhead (22 small headers per tick). Negligible at localhost; relevant only if you're routing the stream over a constrained WAN, which is out of scope for v2.x.
 

@@ -28,7 +28,7 @@ The settings live under `network.openrgb` in `Listeningway.json`, mirrored in th
 | `rate_hz` | `30` | 5–60 | OpenRGB has [a documented CPU-wake-up issue](https://gitlab.com/CalcProgrammer1/OpenRGB/-/issues/2989) above ~60 Hz, so 30 Hz is the friendly cadence. |
 | `brightness` | `1.0` | 0.0–1.0 | Global multiplier on the whole frame. Useful when devices are too bright at night. |
 
-`rate_hz` is clamped to `[5, 60]` at the worker thread.
+`rate_hz` is clamped to `[5, 60]`.
 
 ## What gets driven
 
@@ -55,10 +55,10 @@ Per-device or per-zone customization (e.g. "case stripes on volume only", "keybo
 
 The integration is designed to recover automatically rather than need manual restart.
 
-- **Server not running on toggle-on.** The consumer connects, fails, raises a self-disarm flag, and the overlay toggle flips back off so the UI matches reality. Start OpenRGB and toggle on again.
-- **Server crashes or restarts mid-session.** Detected on the next send tick (`ConnectionClosed` from cppSDK). The status line shows "server connection lost; will retry" and the worker re-attempts on the next tick. Once the server is back, the connection re-establishes and the device list is refreshed.
-- **Hot-plug.** New devices added or removed while Listeningway is running are picked up by `checkForDeviceUpdates()` (called every ~2 s); the device list is re-fetched and each new device is switched to custom mode automatically.
-- **`switchToCustomMode` failure on one device.** Some devices have a custom mode that's hard to reach from OpenRGB. Listeningway logs a warning and keeps painting the rest; the troublesome device is just left in whatever mode it was already in.
+- **Server not running on toggle-on.** The connection fails and the overlay toggle flips back off. Start OpenRGB and toggle on again.
+- **Server crashes or restarts mid-session.** The status line shows "server connection lost; will retry" and Listeningway reconnects automatically once the server is back. Devices are re-discovered on reconnect.
+- **Hot-plug.** New devices added or removed while Listeningway is running are picked up within a couple of seconds; no manual refresh needed.
+- **Custom-mode unavailable on one device.** Some devices expose a custom mode that's hard to reach from OpenRGB. Listeningway keeps painting the rest; the troublesome device is left in whatever mode it was already in.
 
 ## Limitations
 

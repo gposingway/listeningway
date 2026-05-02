@@ -12,9 +12,9 @@
 
 ---
 
-Listeningway is a ReShade addon that listens to system or per-game audio, runs analysis on a dedicated DSP thread, and publishes the results to anything that wants to react: ReShade shaders as annotation-bound uniforms, generative-art and VJ tools over OSC, and RGB peripherals through OpenRGB. One audio capture, three output channels, all toggleable from the in-game overlay.
+Listeningway is a ReShade addon that listens to system or per-game audio, analyzes it in real time, and publishes the results to anything that wants to react: ReShade shaders as annotation-bound uniforms, generative-art and VJ tools over OSC, and RGB peripherals through OpenRGB. One audio capture, three output channels, all toggleable from the in-game overlay.
 
-> v2.x is in beta. Shader uniform names are committed against breakage; OSC and OpenRGB outputs landed in 2.0.0-beta.2. Coming from v1? The v1 uniforms still work; new ones are additive. See [CHANGELOG.md](CHANGELOG.md) for the migration notes.
+> v2.x is in beta. Shader uniform names are committed against breakage. Coming from v1? The v1 uniforms still work; new ones are additive. See [CHANGELOG.md](CHANGELOG.md) for the migration notes.
 
 ---
 
@@ -83,7 +83,7 @@ The full uniform registry, including stability tier (Stable vs Experimental), li
 
 ## What it integrates with
 
-Listeningway can mirror its analysis out to other tools over the wire. Both integrations are off by default and toggle from the overlay's **Integrations** section. New integrations land here as they're built; the underlying `IOutputConsumer` abstraction makes adding one a small change.
+Listeningway can mirror its analysis out to other tools over the wire. Both integrations are off by default and toggle from the overlay's **Integrations** section.
 
 ### OSC (TouchDesigner, Resolume, Max/MSP, vvvv, ...)
 
@@ -124,8 +124,6 @@ You can change the source at any time from the overlay.
 ## Configure
 
 The overlay is the primary UI. Each section has a Settings disclosure on the right; engineer-only knobs hide behind an Advanced sub-disclosure inside it. Save with the **Save** button at the bottom; settings persist to `Listeningway.json` next to the addon. Editing the JSON by hand is fine; restart the game to apply.
-
-Settings are declared once with default, min, max, JSON key, and tooltip via `Setting<T>`. UI sliders, validation clamp, and persistence all read from the same declaration, so `frequency.logStrength` (and the rest) can't drift across UI / load / save the way v1 sometimes allowed. See [ADR-0004](docs/adr/0004-configuration-strategy.md).
 
 Trimmed `Listeningway.json` example:
 
@@ -176,7 +174,7 @@ If you maintain a shader pack that consumes Listeningway uniforms, send a pull r
 
 ## Hacking on Listeningway
 
-If you want to add a new audio source, DSP stage, output consumer, or shader uniform, start with [CONTRIBUTING.md](CONTRIBUTING.md) for the source layout, build, and code style. Architectural rationale lives in [`docs/adr/`](docs/adr/); read in numerical order if you're touching anything cross-cutting. The five-layer pipeline (Source → Ring → DSP → Snapshot → Consumers) is in [ADR-0002](docs/adr/0002-pipeline-architecture.md); the adapter usage policy in [ADR-0003](docs/adr/0003-adapter-usage-policy.md); the `IOutputConsumer` abstraction in [ADR-0010](docs/adr/0010-network-outputs.md).
+If you want to add a new audio source, DSP stage, output consumer, or shader uniform, start with [CONTRIBUTING.md](CONTRIBUTING.md) for the source layout, build, and code style. Architectural rationale lives in [`docs/adr/`](docs/adr/); read in numerical order if you're touching anything cross-cutting. The five-layer pipeline (Source → Ring → DSP → Snapshot → Consumers) is in [ADR-0002](docs/adr/0002-pipeline-architecture.md); the adapter usage policy in [ADR-0003](docs/adr/0003-adapter-usage-policy.md); the configuration system in [ADR-0004](docs/adr/0004-configuration-strategy.md); the `IOutputConsumer` abstraction in [ADR-0010](docs/adr/0010-network-outputs.md).
 
 ---
 
