@@ -88,11 +88,16 @@ REM No DLLs to copy for static build
 
 echo --- Build, Rename, and Move Successful ---
 
-REM Check if deploy.bat exists and run it
-if exist deploy.bat (
-    echo.
-    echo --- Automatically deploying ---
-    call deploy.bat
+REM Optionally deploy to LISTENINGWAY_DEPLOY_DIR. The deploy step is opt-in:
+REM set LISTENINGWAY_DEPLOY_DIR to a target directory (e.g. a game install) and
+REM build.bat will copy the built artifacts there. If the variable is unset,
+REM the deploy step is skipped silently.
+if exist .\deploy.bat (
+    if defined LISTENINGWAY_DEPLOY_DIR (
+        echo.
+        echo --- Automatically deploying to %LISTENINGWAY_DEPLOY_DIR% ---
+        call .\deploy.bat
+    )
 )
 
 endlocal
