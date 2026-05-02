@@ -2,7 +2,7 @@
 
 ## Status
 
-Accepted — 2026-05-01
+Accepted, 2026-05-01
 
 ## Context
 
@@ -44,7 +44,7 @@ The Listeningway v2 engine is structured as a **five-layer data-flow pipeline**:
                                 + future read-only consumers
 ```
 
-### Layer 1 — Source (adapter)
+### Layer 1. Source (adapter)
 
 **Responsibility:** produce float audio frames from any origin (WASAPI loopback, process loopback, file, signal generator, no-op). Push frames into the ring via a `FrameSink` callback. Report capabilities (sample rate, channels, channel layout, frame size, latency) at open time.
 
@@ -52,7 +52,7 @@ The Listeningway v2 engine is structured as a **five-layer data-flow pipeline**:
 
 **Adapter interface:** `IAudioSource` (see ADR-0003).
 
-### Layer 2 — Ring (concrete, no adapter)
+### Layer 2. Ring (concrete, no adapter)
 
 **Responsibility:** lock-free single-producer / single-consumer queue between capture and DSP threads. Power-of-two capacity (~1 second of stereo float audio at 48 kHz ≈ 96 KB).
 
@@ -60,7 +60,7 @@ The Listeningway v2 engine is structured as a **five-layer data-flow pipeline**:
 
 **Threading:** producer = capture thread (Layer 1); consumer = DSP thread (Layer 3). Memory orderings: relaxed on producer's own index, acquire on the other side's index, release on publish. Cache-line padding (`alignas(64)`) on indices to prevent false sharing.
 
-### Layer 3 — DSP Pipeline (adapter sequence)
+### Layer 3. DSP Pipeline (adapter sequence)
 
 **Responsibility:** transform `AnalysisFrame` through a sequence of stages. Each stage is a small unit of analysis (volume, FFT, bands, equalizer, flux, beat, pan, directional, spectral centroid). Stages declare what they read and what they write; the pipeline is composed at startup.
 
@@ -72,23 +72,23 @@ The Listeningway v2 engine is structured as a **five-layer data-flow pipeline**:
 
 **Pipeline composition:** at startup the pipeline is assembled by appending stages. The default order is the visual diagram above. Stage order matters because later stages can read earlier stages' outputs (e.g. `BandsStage` reads magnitudes produced by `FftStage`). The pipeline validates dependencies at startup and refuses to start if a stage's required inputs aren't produced by any earlier stage.
 
-### Layer 4 — Snapshot (concrete, no adapter)
+### Layer 4. Snapshot (concrete, no adapter)
 
 **Responsibility:** publish the latest analysis result atomically to all consumers. One writer (the DSP thread); N readers (overlay, uniform publisher, future consumers).
 
-**Implementation:** seqlock with `memcpy`-based payload copy. Payload is a POD `AudioSnapshot` struct with fixed-size arrays (`std::array<float, kMaxBands>` plus a `uint32_t band_count`) — **no `std::vector`**, no heap allocation in the publish path. See [research-notes.md](research-notes.md) §6 for the writer/reader pseudocode and memory orderings.
+**Implementation:** seqlock with `memcpy`-based payload copy. Payload is a POD `AudioSnapshot` struct with fixed-size arrays (`std::array<float, kMaxBands>` plus a `uint32_t band_count`). **no `std::vector`**, no heap allocation in the publish path. See [research-notes.md](research-notes.md) §6 for the writer/reader pseudocode and memory orderings.
 
 **Threading:** writer = DSP thread; readers = any thread, any frequency. Wait-free for the writer. Lock-free for readers (with bounded retry on contention; readers fall back to last good copy after 4 failed reads).
 
-### Layer 5 — Consumers (concrete, no adapter)
+### Layer 5. Consumers (concrete, no adapter)
 
 **Responsibility:** read the snapshot and do something with it.
 
 **Two consumers in v1:**
-1. **Uniform publisher** — runs on ReShade's `reshade_begin_effects` event (~60–300 fps render thread). Reads snapshot, writes shader uniforms.
-2. **ImGui overlay** — runs on ReShade's overlay callback (~60 fps GUI). Reads snapshot, draws debug visualization.
+1. **Uniform publisher**. Runs on ReShade's `reshade_begin_effects` event (~60–300 fps render thread). Reads snapshot, writes shader uniforms.
+2. **ImGui overlay**. Runs on ReShade's overlay callback (~60 fps GUI). Reads snapshot, draws debug visualization.
 
-**Future consumers** plug in identically — call `snapshot_channel.read()` from anywhere. No `IConsumer` interface is needed; consumers are just call sites that hit the snapshot. If we later have many consumers and want a single "publish hook," that's a `std::vector<std::function<void(const AudioSnapshot&)>>` on the system, not an inheritance hierarchy.
+**Future consumers** plug in identically. Call `snapshot_channel.read()` from anywhere. No `IConsumer` interface is needed; consumers are just call sites that hit the snapshot. If we later have many consumers and want a single "publish hook," that's a `std::vector<std::function<void(const AudioSnapshot&)>>` on the system, not an inheritance hierarchy.
 
 ## Refinements from research
 
@@ -122,7 +122,7 @@ Worker thread exists because device-change callbacks must be non-blocking (see [
 
 ### Negative
 
-- **More files** than v1 — roughly 25–30 small files versus the current 30 large files. Each file has one job.
+- **More files** than v1. Roughly 25–30 small files versus the current 30 large files. Each file has one job.
 - **Slight memory overhead.** Ring buffer (~96 KB) + double-snapshot for seqlock + per-stage state. Total well under 1 MB. Negligible.
 - **Discipline cost.** Layers must not reach across themselves. Source must not call into DSP. DSP must not write to a setting. Consumers must not call into pipeline lifecycle. This is what makes the model work; it requires reviewer attention.
 
@@ -149,7 +149,7 @@ Inlines the entire stage sequence; ~10% perf headroom on the hot loop. **Deferre
 
 ## References
 
-- [research-notes.md §3](research-notes.md) — pipeline architecture validation against JUCE / VST3 / rtaudio / PortAudio.
-- [research-notes.md §6](research-notes.md) — lock-free SPSC ring + seqlock implementation guidance.
-- ADR-0003 — adapter usage policy (which interfaces are first-class).
-- ADR-0006 — testing strategy that exploits the pipeline structure.
+- [research-notes.md §3](research-notes.md). Pipeline architecture validation against JUCE / VST3 / rtaudio / PortAudio.
+- [research-notes.md §6](research-notes.md). Lock-free SPSC ring + seqlock implementation guidance.
+- ADR-0003. Adapter usage policy (which interfaces are first-class).
+- ADR-0006. Testing strategy that exploits the pipeline structure.

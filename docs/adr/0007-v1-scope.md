@@ -2,11 +2,11 @@
 
 ## Status
 
-Accepted — 2026-05-01
+Accepted, 2026-05-01
 
 ## Context
 
-ADR-0001 commits to a clean-room v2 engine; ADR-0002 through ADR-0006 fix the architecture, the configuration model, the uniform contract, and the testing strategy. This ADR locks the **scope of the first beta release (v2.0.0-beta.1)** — what's in, what's deferred, and which specific algorithms / techniques the implementation commits to for each detection feature.
+ADR-0001 commits to a clean-room v2 engine; ADR-0002 through ADR-0006 fix the architecture, the configuration model, the uniform contract, and the testing strategy. This ADR locks the **scope of the first beta release (v2.0.0-beta.1)**. What's in, what's deferred, and which specific algorithms / techniques the implementation commits to for each detection feature.
 
 The rationale for a hard scope lock is the discipline rule from the project conversation: "while we're here" features are accepted, but only if they fit the same property-test-before-feature gate that everything else does. This ADR is the list of features that pass that gate; everything else moves to v1.5 or later.
 
@@ -18,12 +18,12 @@ The detection technique choices here are drawn directly from the MIR research ([
 
 | Source | Status | Notes |
 |---|---|---|
-| `WasapiLoopbackSource` | In v1 | Polling timer (NOT event mode — broken for loopback per [research-notes.md](research-notes.md) §2). `AUTOCONVERTPCM` to float-stereo 48 kHz. MMCSS `L"Audio"`. |
+| `WasapiLoopbackSource` | In v1 | Polling timer (NOT event mode. Broken for loopback per [research-notes.md](research-notes.md) §2). `AUTOCONVERTPCM` to float-stereo 48 kHz. MMCSS `L"Audio"`. |
 | `OffSource` | In v1 | No-op; `start()` returns true, sink never called. |
 | `FileSource` | In v1 | WAV reader, real-time pace; foundation of replay tests (ADR-0006). |
 | `SignalGeneratorSource` | In v1 | Synthetic sine / click / white-noise. Tests only. |
 | `TeeSource` | In v1 | Decorator that wraps any source, writes raw frames to a `.wav` while passing through. User-triggered "record this session for bug reports." |
-| `ProcessAudioSource` | In v1 — opt-in advanced | Windows 10 build 20348+; format must be hardcoded; opt-in via setting, never default. |
+| `ProcessAudioSource` | In v1. Opt-in advanced | Windows 10 build 20348+; format must be hardcoded; opt-in via setting, never default. |
 
 ### DSP stages
 
@@ -56,7 +56,7 @@ The pipeline (ADR-0002) is composed of these stages in order. Each ships in v1 w
 
 #### Onset detection
 - **Algorithm:** spectral flux per band on log-magnitude mel spectrogram. Half-wave rectified log-energy difference per band.
-- **Bands:** kick 20–150 Hz, snare 150–2000 Hz, hi-hat 6000–16000 Hz. (These are *internal* bands feeding the tempo tracker; not exposed as named uniforms — see ADR-0005.)
+- **Bands:** kick 20–150 Hz, snare 150–2000 Hz, hi-hat 6000–16000 Hz. (These are *internal* bands feeding the tempo tracker; not exposed as named uniforms. See ADR-0005.)
 - **Citation:** [research-notes.md §1](research-notes.md). Specifically Battenberg drum thesis, Bello tutorial, Essentia `OnsetDetection`.
 
 #### Adaptive threshold
@@ -79,7 +79,7 @@ The pipeline (ADR-0002) is composed of these stages in order. Each ships in v1 w
 #### Mel-scale band mapping
 - **Convention:** Slaney (linear below 1 kHz, log above) with `norm='slaney'` filter normalization.
 - **Default band count:** 64 (preserved from v1).
-- **Derived counts:** `bands_16 = sum(bands[i*4 : (i+1)*4])` etc. — cheap re-binning.
+- **Derived counts:** `bands_16 = sum(bands[i*4 : (i+1)*4])` etc.. Cheap re-binning.
 - **Citation:** [research-notes.md §1](research-notes.md). librosa.
 
 #### Loudness (K-weighting)
@@ -103,7 +103,7 @@ The pipeline (ADR-0002) is composed of these stages in order. Each ships in v1 w
 
 ### Output
 
-The full uniform set from ADR-0005 — 22 preserved + ~15 new — backed by the centralized shader contract header. `STABILITY.md` shipped alongside.
+The full uniform set from ADR-0005. 22 preserved + ~15 new. Backed by the centralized shader contract header. `STABILITY.md` shipped alongside.
 
 ### Lifecycle
 
@@ -141,12 +141,12 @@ Things considered and rejected for v1:
 |---|---|---|
 | 0 (1 hr) | `git mv src src.harvest`. Empty `src/`. CMake builds an empty stub addon that loads as no-op. | Greenfield workspace ready. |
 | 1 | `IAudioSource`, `OffSource`, `FileSource`, `SignalGeneratorSource`. moodycamel `ReaderWriterQueue` vendored. `FrameRing` wrapper. Property tests for sources. | Sources work in isolation. |
-| 2 | `WasapiLoopbackSource` (port WASAPI lambda from harvest as a "value harvest" — corrections per [research-notes.md §2](research-notes.md): polling timer, MMCSS `Audio`, AUTOCONVERTPCM). End-to-end audio flowing capture → ring. | Audio flows. |
+| 2 | `WasapiLoopbackSource` (port WASAPI lambda from harvest as a "value harvest". Corrections per [research-notes.md §2](research-notes.md): polling timer, MMCSS `Audio`, AUTOCONVERTPCM). End-to-end audio flowing capture → ring. | Audio flows. |
 | 3 | DSP stages 1: `VolumeStage`, `FftStage`, `BandsStage` (Slaney mel), `EqualizerStage`, `LogBoostStage`, `BandNormStage`, `SpectralCentroidStage`. Property tests + replay tests for sine/silence/pink-noise. | First half of DSP, green. |
 | 4 | DSP stages 2: `FluxStage` (per-band), `BeatStage` (autocorrelation tempo + PLL phase + adaptive median threshold), `ChronotensityStage`, `PanStage`, `DirectionalStage`, `LoudnessStage`. Replay test against click-train pins tempo lock. | Full DSP green. |
 | 5 | `Setting<T>`, `Settings` struct + intrusive JSON, `Store` with version counter, state machine in `AudioSystem`. Overlay rebuilt against snapshot reads + setting writes. Uniform contract header + auto-generated `UniformPublisher`. Shader contract `STABILITY.md`. | End-to-end working in-game. |
 | 6 | `TeeSource`. `ProcessAudioSource` (opt-in attempt; if blocked by API surprises, document and defer). DSP profiler view in overlay (optional). Polish, deploy.bat update. Tag `v2.0.0-beta.1`. Drop `src.harvest/`. | Ship. |
-| (+1 buffer) | Slack day for the inevitable "this took longer than planned." | — |
+| (+1 buffer) | Slack day for the inevitable "this took longer than planned." |. |
 
 ## Consequences
 
@@ -166,11 +166,11 @@ Things considered and rejected for v1:
 
 ## References
 
-- ADR-0001 — beta scope.
-- ADR-0002 — pipeline architecture.
-- ADR-0003 — adapter usage policy.
-- ADR-0004 — configuration strategy.
-- ADR-0005 — uniform contract.
-- ADR-0006 — testing strategy.
-- ADR-0008 — language and dependencies.
-- [research-notes.md](research-notes.md) — full citations for every algorithm choice in this ADR.
+- ADR-0001. Beta scope.
+- ADR-0002. Pipeline architecture.
+- ADR-0003. Adapter usage policy.
+- ADR-0004. Configuration strategy.
+- ADR-0005. Uniform contract.
+- ADR-0006. Testing strategy.
+- ADR-0008. Language and dependencies.
+- [research-notes.md](research-notes.md). Full citations for every algorithm choice in this ADR.

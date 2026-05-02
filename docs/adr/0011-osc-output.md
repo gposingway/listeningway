@@ -2,7 +2,7 @@
 
 ## Status
 
-Accepted — 2026-05-02
+Accepted, 2026-05-02
 
 ## Context
 
@@ -13,8 +13,8 @@ delivery mechanism.
 
 User wishlist research (`research-notes-process-audio.md` companion findings)
 showed that OSC is the lingua franca of the creative-coding / VJ ecosystem
-— TouchDesigner, Resolume, vvvv, Max/MSP, MadMapper, theatrical lighting
-controllers via DMX bridges. Third-party AudioLink↔OSC bridges exist
+(TouchDesigner, Resolume, vvvv, Max/MSP, MadMapper, theatrical lighting
+controllers via DMX bridges). Third-party AudioLink↔OSC bridges exist
 (Codel1417/VRC-OSC-Audio-Reaction, OSCAudioLink, Mathieu52/OSCMidi)
 precisely because AudioLink itself doesn't speak OSC. The demand is
 concrete and cross-community.
@@ -78,7 +78,7 @@ the same mental model:
 | `/listeningway/loudness` | `f` | scalar |
 | `/listeningway/test` | `f` (1.0) | overlay test-button only |
 
-22 messages per tick at the typical settings — ~1.3 K packets/sec at
+22 messages per tick at the typical settings. ~1.3 K packets/sec at
 60 Hz, each ≤300 bytes. Trivial bandwidth on localhost.
 
 Arrays are encoded as repeated `f` type tags (e.g. `,fffff…f`) rather
@@ -113,7 +113,7 @@ debug-friendly first cut; rebinding mid-flight is a future refinement.
 ### F. Test path: `samples/osc_receiver.py`
 
 A single-file, stdlib-only Python receiver shipped under `samples/`.
-Usage: `python samples/osc_receiver.py` — listens on `127.0.0.1:9000`
+Usage: `python samples/osc_receiver.py`. Listens on `127.0.0.1:9000`
 and prints every incoming message. Lets users verify connectivity
 without installing third-party OSC tools.
 
@@ -143,11 +143,11 @@ before flipping the main toggle.
   routes the stream over a constrained WAN, which is out of scope for
   v2.x.
 - **Live `host` / `port` changes require toggle-off-then-on.** The
-  alternative — rebind the socket on every settings version bump —
-  trades reliability for ergonomics; we picked reliability.
+  alternative (rebind the socket on every settings version bump) trades
+  reliability for ergonomics; we picked reliability.
 - **Vendored library warnings**: tinyosc trips a handful of `/W4`
   signed/unsigned mismatch warnings. We relax the level for that one
-  file (`COMPILE_OPTIONS /W3`) rather than patch upstream — keeps
+  file (`COMPILE_OPTIONS /W3`) rather than patch upstream. Keeps
   attribution clean.
 
 ### Neutral
@@ -198,8 +198,8 @@ distinct socket lifetime). UDP send-only is the right fit.
 
 ## References
 
-- ADR-0010 — `IOutputConsumer` abstraction; vendoring policy; security
+- ADR-0010. `IOutputConsumer` abstraction; vendoring policy; security
   stance for toggleable network consumers.
 - [tinyosc on GitHub](https://github.com/mhroth/tinyosc)
 - OSC 1.0 specification (1997), [opensoundcontrol.org](http://opensoundcontrol.org/spec-1_0.html)
-- [`samples/osc_receiver.py`](../../samples/osc_receiver.py) — debug receiver.
+- [`samples/osc_receiver.py`](../../samples/osc_receiver.py). Debug receiver.

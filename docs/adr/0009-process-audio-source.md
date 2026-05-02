@@ -1,16 +1,16 @@
-# ADR-0009: ProcessAudioSource — per-process loopback
+# ADR-0009: ProcessAudioSource. Per-process loopback
 
 ## Status
 
-Accepted — 2026-05-02
+Accepted, 2026-05-02
 
 ## Context
 
-`WasapiLoopbackSource` (ADR-0007) captures the system default render endpoint. That is a great default — it just works and needs no permissions — but it has one user-visible weakness: **the visualization reacts to everything the user hears**, including Discord, browser tabs, music players, system notifications, alt-tabbed apps. For a shader effect tied to *the game's* music, that bleed is the difference between an immersive effect and a distraction.
+`WasapiLoopbackSource` (ADR-0007) captures the system default render endpoint. That is a great default. It just works and needs no permissions. But it has one user-visible weakness: **the visualization reacts to everything the user hears**, including Discord, browser tabs, music players, system notifications, alt-tabbed apps. For a shader effect tied to *the game's* music, that bleed is the difference between an immersive effect and a distraction.
 
 The user asked for source isolation. Three parallel research agents surveyed the industry; full notes in [research-notes-process-audio.md](research-notes-process-audio.md). Summary:
 
-- **OBS Studio (28+), Streamlabs, Discord (modern builds)** all use `ActivateAudioInterfaceAsync` with `AUDIOCLIENT_PROCESS_LOOPBACK_PARAMS` — Microsoft's "Application Audio Capture" API, available on Windows 10 build 20348 (22H2) and Windows 11.
+- **OBS Studio (28+), Streamlabs, Discord (modern builds)** all use `ActivateAudioInterfaceAsync` with `AUDIOCLIENT_PROCESS_LOOPBACK_PARAMS`. Microsoft's "Application Audio Capture" API, available on Windows 10 build 20348 (22H2) and Windows 11.
 - **NVIDIA Broadcast, Krisp, Voicemeeter, VB-Cable** ship signed virtual audio drivers and require manual per-app routing.
 - **Pre-2022 Discord and the original `bozbez/win-capture-audio`** used DLL injection and IAT/inline hooks on `IAudioRenderClient`. Since 2022 they have all migrated away from that path.
 - **APOs (system-effect audio processing objects)** see the endpoint mix, not per-process streams. Wrong layer.
@@ -46,7 +46,7 @@ ActivateAudioInterfaceAsync(VIRTUAL_AUDIO_DEVICE_PROCESS_LOOPBACK,
 
 The `IActivateAudioInterfaceCompletionHandler` posts back to a Win32 event; the source's main thread waits on the event with a timeout, then proceeds. This matches the OBS-tested pattern.
 
-### Format — hardcoded
+### Format. Hardcoded
 
 `GetMixFormat` and `IsFormatSupported` return `E_NOTIMPL` on the virtual device returned by process loopback. Format **must** be hardcoded:
 
@@ -74,7 +74,7 @@ constexpr DWORD kStreamFlags =
     AUDCLNT_STREAMFLAGS_EVENTCALLBACK;
 ```
 
-Event mode **works** for process loopback (unlike system loopback, where `EVENTCALLBACK | LOOPBACK` is documented broken — the event never fires). Process loopback uses a different code path through `ActivateAudioInterfaceAsync` and event-mode is the OBS-tested path.
+Event mode **works** for process loopback (unlike system loopback, where `EVENTCALLBACK | LOOPBACK` is documented broken. The event never fires). Process loopback uses a different code path through `ActivateAudioInterfaceAsync` and event-mode is the OBS-tested path.
 
 ### State machine
 
@@ -127,16 +127,16 @@ If `available()` is true but `open()` fails (corner cases like the 22H2 process-
 
 ### Positive
 
-- **True isolation.** The visualization tracks the game's audio *only* — Discord, browser, music app, system notifications all become invisible. This is what users have been asking for.
+- **True isolation.** The visualization tracks the game's audio *only*. Discord, browser, music app, system notifications all become invisible. This is what users have been asking for.
 - **No driver install.** Unlike NVIDIA Broadcast / VB-Cable / Voicemeeter, no installer, no signed-driver rollout, no UAC.
 - **No anti-cheat exposure.** `ActivateAudioInterfaceAsync` against our own PID is invisible to anti-cheat: no `OpenProcess`, no memory reads, no DLL injection beyond what ReShade already does. FFXIV ships no anti-cheat anyway, but this is portability-friendly.
-- **In-process advantage.** `GetCurrentProcessId()` IS the target. None of the OBS-grade complexity around discovering the right PID, watching launchers, or handling separate audio child processes applies — the addon is loaded inside the game already, and `INCLUDE_TARGET_PROCESS_TREE` covers any child renderers.
+- **In-process advantage.** `GetCurrentProcessId()` IS the target. None of the OBS-grade complexity around discovering the right PID, watching launchers, or handling separate audio child processes applies. The addon is loaded inside the game already, and `INCLUDE_TARGET_PROCESS_TREE` covers any child renderers.
 - **Adapter pattern reused.** Source layer was designed for exactly this (ADR-0003): a new source slots in without touching the ring, DSP, snapshot, or output layers.
 
 ### Negative
 
 - **OS floor.** Windows 10 prior to build 20348 (22H2 update) and all Windows 11 builds prior to 21H2 cannot use this source. Mitigation: graceful disable + tooltip; `system` source remains the default.
-- **Hardcoded format.** Per-device sample-rate awareness is gone for this source — engine handles conversion. In practice this is a non-issue: 48 kHz / float / stereo is a near-universal target.
+- **Hardcoded format.** Per-device sample-rate awareness is gone for this source. Engine handles conversion. In practice this is a non-issue: 48 kHz / float / stereo is a near-universal target.
 - **Documented edge cases.** Alt-tab from exclusive-fullscreen, 60-minute drift, rapid Start/Stop. Each has a mitigation; none has been a user-blocking issue in OBS's deployed base since 2022.
 - **One more source to test.** Replay tests don't cover the source layer (they hit `FileSource`); manual in-game verification covers `ProcessAudioSource`.
 
@@ -169,15 +169,15 @@ If `available()` is true but `open()` fails (corner cases like the 22H2 process-
 
 ### `IAudioMeterInformation` peak gating
 
-**Deferred to a separate PR.** Per-session peak metering is **per-session metering only** — no raw audio buffer. It can serve as a "game has audio" pre-gate for the system-loopback path, suppressing analysis when the game is silent on older OSes. Useful, complementary, but orthogonal to ProcessAudioSource. Track separately.
+**Deferred to a separate PR.** Per-session peak metering is **per-session metering only**. No raw audio buffer. It can serve as a "game has audio" pre-gate for the system-loopback path, suppressing analysis when the game is silent on older OSes. Useful, complementary, but orthogonal to ProcessAudioSource. Track separately.
 
 ## References
 
-- ADR-0001 — clean-room v2 engine; sets toolchain freedom.
-- ADR-0002 — pipeline architecture; Source is the topmost layer.
-- ADR-0003 — adapter usage policy; `IAudioSource` is one of the three interfaces.
-- ADR-0007 — v1 scope; `WasapiLoopbackSource` is in, advanced sources were deferred.
-- [research-notes-process-audio.md](research-notes-process-audio.md) — full research notes.
+- ADR-0001. Clean-room v2 engine; sets toolchain freedom.
+- ADR-0002. Pipeline architecture; Source is the topmost layer.
+- ADR-0003. Adapter usage policy; `IAudioSource` is one of the three interfaces.
+- ADR-0007. V1 scope; `WasapiLoopbackSource` is in, advanced sources were deferred.
+- [research-notes-process-audio.md](research-notes-process-audio.md). Full research notes.
 - [PROCESS_LOOPBACK_MODE](https://learn.microsoft.com/en-us/windows/win32/api/audioclientactivationparams/ne-audioclientactivationparams-process_loopback_mode)
 - [AUDIOCLIENT_ACTIVATION_PARAMS](https://learn.microsoft.com/en-us/windows/win32/api/audioclientactivationparams/ns-audioclientactivationparams-audioclient_activation_params)
 - [ActivateAudioInterfaceAsync](https://learn.microsoft.com/en-us/windows/win32/api/mmdeviceapi/nf-mmdeviceapi-activateaudiointerfaceasync)

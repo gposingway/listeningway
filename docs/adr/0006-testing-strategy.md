@@ -1,12 +1,12 @@
-# ADR-0006: Testing strategy — property-based, FileSource replay, no parity baseline
+# ADR-0006: Testing strategy. Property-based, FileSource replay, no parity baseline
 
 ## Status
 
-Accepted — 2026-05-01
+Accepted, 2026-05-01
 
 ## Context
 
-v1 has 19 unit tests added late in the refactor (Phase 3 of the audit work). They cover the configuration round-trip, beat profile presets, audio format utilities, and channel layout — useful but narrow. The DSP core itself (FFT, bands, beat detection, pan, directional) is entirely untested because it lives inside the 1,000-line god-procedure (`AnalyzeAudioBuffer`) and isn't structurally testable.
+v1 has 19 unit tests added late in the refactor (Phase 3 of the audit work). They cover the configuration round-trip, beat profile presets, audio format utilities, and channel layout. Useful but narrow. The DSP core itself (FFT, bands, beat detection, pan, directional) is entirely untested because it lives inside the 1,000-line god-procedure (`AnalyzeAudioBuffer`) and isn't structurally testable.
 
 Two consequences fell out of that:
 1. The recent SIMD-toggle bug existed because no test exercised the code path with `cfg_simd = false`. The test would have been one assertion, but the structure made it impossible to write.
@@ -26,7 +26,7 @@ Every `Setting<T>::clamp` invariant, every `Settings` round-trip (default → sa
 
 ### 2. Property-based tests for DSP stages (catch invariant violations)
 
-Each `IDspStage` gets property tests that exercise it across the input space, asserting invariants the stage must maintain. This is the cornerstone of the strategy — it lets us catch whole bug *classes* without a behavior baseline.
+Each `IDspStage` gets property tests that exercise it across the input space, asserting invariants the stage must maintain. This is the cornerstone of the strategy. It lets us catch whole bug *classes* without a behavior baseline.
 
 Examples of the invariants we'll pin:
 
@@ -50,16 +50,16 @@ Property test framework: **`rapidcheck`** (header-only C++ port of QuickCheck). 
 
 A small set of curated input WAV files lives in `tests/data/`:
 
-- `silence_5s.wav` — assert all outputs zero or at-rest.
-- `sine_440hz_3s.wav` — assert bands peak in the band containing 440 Hz; pan = 0; beat absent.
-- `sine_left_3s.wav` — pan = -1.0.
-- `click_train_120bpm_10s.wav` — assert tempo locks at 120 ± 1 BPM, confidence rises, `beat_phase` advances correctly.
-- `pink_noise_5s.wav` — assert spectral centroid stable, AGC normalization converges to 1.0 over the window.
-- `genre_*` — a few representative musical genres for smoke testing the full pipeline.
+- `silence_5s.wav`. Assert all outputs zero or at-rest.
+- `sine_440hz_3s.wav`. Assert bands peak in the band containing 440 Hz; pan = 0; beat absent.
+- `sine_left_3s.wav`. Pan = -1.0.
+- `click_train_120bpm_10s.wav`. Assert tempo locks at 120 ± 1 BPM, confidence rises, `beat_phase` advances correctly.
+- `pink_noise_5s.wav`. Assert spectral centroid stable, AGC normalization converges to 1.0 over the window.
+- `genre_*`. A few representative musical genres for smoke testing the full pipeline.
 
 `FileSource` reads the WAV at real-time pace (or accelerated for offline tests) and pushes frames through the live pipeline. The test assertion runs against the published `AudioSnapshot` after a settling period.
 
-These tests are the v2 equivalent of "open a game, play music, watch the bars" — but headless, deterministic, and runnable in CI. They're the safety net that catches any regression that property tests miss.
+These tests are the v2 equivalent of "open a game, play music, watch the bars". But headless, deterministic, and runnable in CI. They're the safety net that catches any regression that property tests miss.
 
 ### 4. `SignalGeneratorSource` for synthetic determinism
 
@@ -118,7 +118,7 @@ tests/
 1. **A new `IDspStage` cannot land without at least one property test.** Code review enforces this. The property test pins the invariants the stage commits to.
 2. **A bug fix lands with a regression test that fails before the fix.** The v1 SIMD bug and the v1 logStrength bug both qualify; both will have a regression test in the v2 suite.
 3. **Replay test data is reviewed and version-controlled.** WAV files in `tests/data/` are committed; their assertions are documented in adjacent `.md` files explaining what each test verifies.
-4. **Tests that exercise `AudioSystem` end-to-end use `FileSource` or `SignalGeneratorSource`.** Never `WasapiLoopbackSource` in CI — that path is non-deterministic and machine-dependent.
+4. **Tests that exercise `AudioSystem` end-to-end use `FileSource` or `SignalGeneratorSource`.** Never `WasapiLoopbackSource` in CI. That path is non-deterministic and machine-dependent.
 
 ## Consequences
 
@@ -137,7 +137,7 @@ tests/
 
 ### Neutral
 
-- **Coverage of WASAPI-bound code is manual + beta.** This is the right tradeoff — automating WASAPI testing would require complex device-mocking with low return on investment.
+- **Coverage of WASAPI-bound code is manual + beta.** This is the right tradeoff. Automating WASAPI testing would require complex device-mocking with low return on investment.
 
 ## Alternatives considered
 
@@ -145,7 +145,7 @@ tests/
 Capture v1 outputs, assert v2 matches within ε. **Rejected** per ADR-0001's beta scope.
 
 ### Mock the entire audio pipeline for tests
-Build `MockAudioSource`, `MockPipeline`, `MockSnapshot`, etc. **Rejected** — `FileSource` and `SignalGeneratorSource` *are* the test doubles. They're real implementations of `IAudioSource`, used in production for replay/test; they don't need to be mocked again.
+Build `MockAudioSource`, `MockPipeline`, `MockSnapshot`, etc. **Rejected**. `FileSource` and `SignalGeneratorSource` *are* the test doubles. They're real implementations of `IAudioSource`, used in production for replay/test; they don't need to be mocked again.
 
 ### Snapshot testing (record stage outputs once, assert no change)
 Standard pattern in some test ecosystems. **Rejected** for the same reason as golden-recording: it pins behavior without justifying it. A snapshot test passes whether the algorithm is correct or just consistent.
@@ -154,11 +154,11 @@ Standard pattern in some test ecosystems. **Rejected** for the same reason as go
 **Rejected.** Property tests catch the invariant violations unit tests routinely miss. The v1 SIMD bug demonstrates this: any unit test we'd have written would have happened to use SIMD-on inputs; a property test exploring the input space would have hit cfg_simd=false within a handful of iterations.
 
 ### TDD (write tests before stages)
-**Adopted partially.** New stages are written with their property test in the same change. We don't insist on test-first ordering — both halves land together.
+**Adopted partially.** New stages are written with their property test in the same change. We don't insist on test-first ordering. Both halves land together.
 
 ## References
 
-- ADR-0001 — beta scope (no parity baseline).
-- ADR-0002 — pipeline structure that makes per-stage testing feasible.
-- ADR-0003 — adapter policy that gives `IAudioSource` multiple test-friendly implementations.
+- ADR-0001. Beta scope (no parity baseline).
+- ADR-0002. Pipeline structure that makes per-stage testing feasible.
+- ADR-0003. Adapter policy that gives `IAudioSource` multiple test-friendly implementations.
 - v1 bugs the strategy would have caught: SIMD-toggle freeze (covered by `FftStage` property test); logStrength drift (covered by `Settings` round-trip test); provider-switch freeze (covered by `AudioSystem` lifecycle integration test against `FileSource` + state machine assertions).

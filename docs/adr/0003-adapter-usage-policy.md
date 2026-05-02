@@ -1,8 +1,8 @@
-# ADR-0003: Adapter pattern usage policy — three interfaces, no more
+# ADR-0003: Adapter pattern usage policy. Three interfaces, no more
 
 ## Status
 
-Accepted — 2026-05-01
+Accepted, 2026-05-01
 
 ## Context
 
@@ -11,7 +11,7 @@ The five-layer pipeline (ADR-0002) introduces three places where polymorphism is
 - DSP stages differ in transformation (volume vs FFT vs beat detection) but share the "transform an `AnalysisFrame`" shape.
 - Beat detectors differ in algorithm (simple energy vs spectral flux autocorrelation vs future variants) but share input/output.
 
-A frequent design failure in audio software is over-application of the adapter / interface pattern: every concrete type gets an interface "for testability" or "for future flexibility," and the codebase ends up with `IRingBuffer`, `IConfigStore`, `ISnapshotChannel`, `IConsumer`, `IUniformPublisher`, `ILogger`, etc. — abstractions that have exactly one implementation and exist only as ceremony around their concrete type.
+A frequent design failure in audio software is over-application of the adapter / interface pattern: every concrete type gets an interface "for testability" or "for future flexibility," and the codebase ends up with `IRingBuffer`, `IConfigStore`, `ISnapshotChannel`, `IConsumer`, `IUniformPublisher`, `ILogger`, etc.. Abstractions that have exactly one implementation and exist only as ceremony around their concrete type.
 
 This ADR fixes the policy: **adapters appear at three points only.** Everything else is concrete.
 
@@ -21,24 +21,24 @@ This ADR fixes the policy: **adapters appear at three points only.** Everything 
 
 #### `IAudioSource`
 Multiple real implementations, each with materially different mechanics:
-- `WasapiLoopbackSource` — system audio capture via WASAPI loopback.
-- `OffSource` — no-op source for "audio analysis disabled" state. Sink is never called.
-- `FileSource` — reads a WAV file, pushes frames at real-time pace. Used for headless testing and replay-driven bug reports (ADR-0006).
-- `SignalGeneratorSource` — tests only. Synthesizes sine, click train, white noise with deterministic content.
-- `ProcessAudioSource` (v1, opt-in) — per-process loopback via Windows 10 build 20348+ APIs.
-- `TeeSource` (v1, optional decorator) — wraps another source, writes raw frames to disk while passing through.
+- `WasapiLoopbackSource`. System audio capture via WASAPI loopback.
+- `OffSource`. No-op source for "audio analysis disabled" state. Sink is never called.
+- `FileSource`. Reads a WAV file, pushes frames at real-time pace. Used for headless testing and replay-driven bug reports (ADR-0006).
+- `SignalGeneratorSource`. Tests only. Synthesizes sine, click train, white noise with deterministic content.
+- `ProcessAudioSource` (v1, opt-in). Per-process loopback via Windows 10 build 20348+ APIs.
+- `TeeSource` (v1, optional decorator). Wraps another source, writes raw frames to disk while passing through.
 
 The interface earns its keep: each implementation has a different mechanism but they all need to be lifecycle-managed identically by `AudioSystem`. Tests rely on `FileSource` and `SignalGeneratorSource` for determinism. The dropdown UI iterates over registered sources.
 
 #### `IDspStage`
-The pipeline (ADR-0002) is a sequence of stages, each transforming an `AnalysisFrame`. Volume, FFT, Bands, Equalizer, LogBoost, Flux, Beat, Pan, Directional, SpectralCentroid, Loudness — each is a stage. Tests pin behavior per-stage. Profiling instruments per-stage. Future stages plug in without touching unrelated code.
+The pipeline (ADR-0002) is a sequence of stages, each transforming an `AnalysisFrame`. Volume, FFT, Bands, Equalizer, LogBoost, Flux, Beat, Pan, Directional, SpectralCentroid, Loudness. Each is a stage. Tests pin behavior per-stage. Profiling instruments per-stage. Future stages plug in without touching unrelated code.
 
 The interface is small (`process(AnalysisFrame&, const Settings&)` plus `name()`, `reads()`, `writes()` for dependency declaration), and its existence enables the compositional pipeline that's the entire point of the architecture.
 
 #### `IBeatDetector`
 Already present in v1. Multiple algorithms (`SimpleEnergy`, `SpectralFluxAutocorrelation`) that share the contract `process(magnitudes, flux, dt) → BeatResult`. Different musical genres benefit from different detectors. The current `BeatStage` holds the active `IBeatDetector` and routes work to it.
 
-### Concrete elsewhere — no adapter
+### Concrete elsewhere. No adapter
 
 | Concrete component | Why no adapter |
 |---|---|
@@ -50,12 +50,12 @@ Already present in v1. Multiple algorithms (`SimpleEnergy`, `SpectralFluxAutocor
 | `UniformPublisher` | Concrete. Walks `AudioSnapshot` fields and writes to ReShade uniform sources via the contract from ADR-0005. Adding a second consumer is *another concrete consumer*, not a polymorphic publisher. |
 | Overlay panels | Concrete. ImGui code that reads the snapshot and draws. |
 
-### When in doubt — concrete
+### When in doubt. Concrete
 
 The default answer to "should this be an interface?" is **no**. An interface is justified when:
 1. **Two or more meaningful implementations exist or are concretely planned.** Hypothetical future flexibility doesn't count.
 2. **Tests genuinely need a mock.** "We could mock this for tests" is true of every class; the question is whether mocking is materially easier than using the real thing.
-3. **The contract is small and stable.** Wide interfaces with many methods are a smell — the abstraction probably doesn't carve at a real joint.
+3. **The contract is small and stable.** Wide interfaces with many methods are a smell. The abstraction probably doesn't carve at a real joint.
 
 If none of these hold, write a concrete class.
 
@@ -66,8 +66,8 @@ If none of these hold, write a concrete class.
 - **Three documented extension points.** Adding a new source, stage, or beat detector is well-trodden ground. Anything else is "rebuild and propose a new ADR if you need flexibility."
 - **No DI container.** Wiring is a 30-line function in `DllMain` (`register_source(...)`, `pipeline.add(...)`). Fully visible, no magic.
 - **No factory hierarchies.** Construction is direct via `std::make_unique<WasapiLoopbackSource>()`.
-- **No `IConsumer`, `ISnapshotChannel`, `IConfigStore`** — concerns that shouldn't be polymorphic stay concrete.
-- **Property tests stay simple** — they test concrete stages and concrete sources, not interface contracts.
+- **No `IConsumer`, `ISnapshotChannel`, `IConfigStore`**. Concerns that shouldn't be polymorphic stay concrete.
+- **Property tests stay simple**. They test concrete stages and concrete sources, not interface contracts.
 
 ### Negative
 
@@ -81,7 +81,7 @@ If none of these hold, write a concrete class.
 ## Alternatives considered
 
 ### Adapter everywhere ("for testability")
-**Rejected.** Tests don't need it for ring buffers, snapshot channels, or config stores — those are value-like or have one obvious implementation. Adding interfaces "just in case" creates parallel hierarchies (`Ring` + `IRing`, `Settings` + `ISettings`) that obscure the actual data flow.
+**Rejected.** Tests don't need it for ring buffers, snapshot channels, or config stores. Those are value-like or have one obvious implementation. Adding interfaces "just in case" creates parallel hierarchies (`Ring` + `IRing`, `Settings` + `ISettings`) that obscure the actual data flow.
 
 ### Adapter only at the system boundary (one mega-interface for "the whole audio system")
 **Rejected.** Defeats the point. The three interfaces we *do* keep are at different layers and serve different purposes. A single mega-interface would force every test to mock the entire system.
@@ -129,6 +129,6 @@ public:
 
 ## References
 
-- ADR-0002 — defines where the three interfaces fit in the pipeline.
-- ADR-0006 — testing strategy depends on `IAudioSource` having multiple implementations.
-- [research-notes.md §3](research-notes.md) — JUCE / VST3 patterns informing the adapter choices.
+- ADR-0002. Defines where the three interfaces fit in the pipeline.
+- ADR-0006. Testing strategy depends on `IAudioSource` having multiple implementations.
+- [research-notes.md §3](research-notes.md). JUCE / VST3 patterns informing the adapter choices.

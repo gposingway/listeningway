@@ -1,4 +1,4 @@
-# Research Notes — Listeningway v2 Engine
+# Research Notes. Listeningway v2 Engine
 
 This document captures the focused research conducted before drafting the ADRs. Six parallel investigations covered MIR algorithms, WASAPI loopback patterns, real-time audio pipeline architectures, audio-reactive visualizer design conventions, perceptual loudness, and lock-free concurrency. Findings here feed directly into ADR-0001 through ADR-0008.
 
@@ -14,9 +14,9 @@ The research surfaced five points where agent recommendations conflicted; resolu
 **Why:** Octave errors (60↔120↔240 BPM) are the dominant failure mode in naive trackers; the log-Gaussian prior biases selection toward musically plausible tempos. Window size matches librosa default. Ellis 2007 is foundational but offline; we need streaming.
 
 **Citations:**
-- [Ellis 2007 — Beat Tracking by Dynamic Programming (PDF)](https://www.ee.columbia.edu/~dpwe/pubs/Ellis07-beattrack.pdf)
+- [Ellis 2007. Beat Tracking by Dynamic Programming (PDF)](https://www.ee.columbia.edu/~dpwe/pubs/Ellis07-beattrack.pdf)
 - [aubio tempo.c (BSD)](https://github.com/aubio/aubio/blob/master/src/tempo/tempo.c)
-- [BTrack — Davies real-time tracker](https://github.com/adamstark/BTrack)
+- [BTrack. Davies real-time tracker](https://github.com/adamstark/BTrack)
 - [librosa beat.py](https://github.com/bmcfee/librosa/blob/main/librosa/beat.py)
 
 ### Per-band onset detection
@@ -26,17 +26,17 @@ The research surfaced five points where agent recommendations conflicted; resolu
 
 **Citations:**
 - [Battenberg drum thesis (PDF)](https://www2.eecs.berkeley.edu/Pubs/TechRpts/2012/EECS-2012-250.pdf)
-- [Bello et al. — Tutorial on Onset Detection](https://www.csd.uoc.gr/~hannover/MMILab-Andre_files/HolzapfelIEEEOnset.pdf)
+- [Bello et al.. Tutorial on Onset Detection](https://www.csd.uoc.gr/~hannover/MMILab-Andre_files/HolzapfelIEEEOnset.pdf)
 - [Essentia OnsetDetection](https://essentia.upf.edu/reference/streaming_OnsetDetection.html)
 
 ### Adaptive threshold
-**Decision:** aubio's exact formula — `threshold = median(window) + 0.1 * mean(window)` over a window of 5 past + 1 future samples (~60 ms at ~100 Hz frame rate). Refractory ~50 ms after detected onset.
+**Decision:** aubio's exact formula. `threshold = median(window) + 0.1 * mean(window)` over a window of 5 past + 1 future samples (~60 ms at ~100 Hz frame rate). Refractory ~50 ms after detected onset.
 
-**Why:** Battle-tested. Median-based is far more robust than moving-average — moving averages are pulled up by the very onsets they're meant to detect, raising the threshold and causing missed onsets.
+**Why:** Battle-tested. Median-based is far more robust than moving-average. Moving averages are pulled up by the very onsets they're meant to detect, raising the threshold and causing missed onsets.
 
 **Citations:**
 - [aubio peakpicker.c](https://github.com/aubio/aubio/blob/master/src/onset/peakpicker.c)
-- [Brossier 2004 — Fast Notes (PDF)](https://aubio.org/articles/brossier04fastnotes.pdf)
+- [Brossier 2004. Fast Notes (PDF)](https://aubio.org/articles/brossier04fastnotes.pdf)
 
 ### Spectral features
 **Decision:** Compute on **magnitude** spectrum (not power) after Hann window. Centroid = `Σ(f[k]·|X[k]|) / Σ|X[k]|`, normalized by Nyquist. Add ε=1e-10 before any log/division for silence robustness.
@@ -48,18 +48,18 @@ The research surfaced five points where agent recommendations conflicted; resolu
 ### Mel scale convention
 **Decision:** Slaney convention (linear below 1 kHz, log above) with `norm='slaney'` filter normalization.
 
-**Why:** Allocates more bins to bass/low-mid where kick/snare live — exactly the right tradeoff for music visualizers. HTK's pure-log form is for speech recognition (formant resolution); wrong tradeoff for music reactivity.
+**Why:** Allocates more bins to bass/low-mid where kick/snare live. Exactly the right tradeoff for music visualizers. HTK's pure-log form is for speech recognition (formant resolution); wrong tradeoff for music reactivity.
 
 **Citations:**
 - [librosa mel_frequencies](https://librosa.org/doc/main/generated/librosa.mel_frequencies.html)
-- [Mel scale — Wikipedia](https://en.wikipedia.org/wiki/Mel_scale)
+- [Mel scale. Wikipedia](https://en.wikipedia.org/wiki/Mel_scale)
 
 ---
 
 ## 2. WASAPI loopback
 
 ### Critical correction: event mode is broken for loopback
-**Finding:** `AUDCLNT_STREAMFLAGS_LOOPBACK | AUDCLNT_STREAMFLAGS_EVENTCALLBACK` together is broken — the call succeeds, `SetEventHandle` succeeds, but the event never fires for loopback streams. Confirmed in OBS source, cubeb issues, and Microsoft's own samples.
+**Finding:** `AUDCLNT_STREAMFLAGS_LOOPBACK | AUDCLNT_STREAMFLAGS_EVENTCALLBACK` together is broken. The call succeeds, `SetEventHandle` succeeds, but the event never fires for loopback streams. Confirmed in OBS source, cubeb issues, and Microsoft's own samples.
 
 **Decision:** Drive the capture loop with `CreateWaitableTimerEx(... HIGH_RESOLUTION ...)` at half the device period. Loop on `IAudioCaptureClient::GetNextPacketSize` until 0, then wait for timer.
 
@@ -68,10 +68,10 @@ The research surfaced five points where agent recommendations conflicted; resolu
 ### Format pinning
 **Decision:** `AUDCLNT_STREAMFLAGS_AUTOCONVERTPCM | AUDCLNT_STREAMFLAGS_SRC_DEFAULT_QUALITY`, request float-stereo 48 kHz `WAVEFORMATEXTENSIBLE` with `KSDATAFORMAT_SUBTYPE_IEEE_FLOAT`, `KSAUDIO_SPEAKER_STEREO`.
 
-**Why:** The engine handles resample/downmix for any odd device format. Trade bit-exact capture for robustness. For an audio-reactive visualizer this is unambiguous — we never round-trip the audio, only analyze it.
+**Why:** The engine handles resample/downmix for any odd device format. Trade bit-exact capture for robustness. For an audio-reactive visualizer this is unambiguous. We never round-trip the audio, only analyze it.
 
 ### Process loopback
-**Finding:** Available since Windows 10 build 20348. `IAudioClient::GetMixFormat` and `IsFormatSupported` return `E_NOTIMPL` on the virtual device — must hardcode format. Rapid Start/Stop cycles can crash. Children-process inclusion misses some launchers that re-parent.
+**Finding:** Available since Windows 10 build 20348. `IAudioClient::GetMixFormat` and `IsFormatSupported` return `E_NOTIMPL` on the virtual device. Must hardcode format. Rapid Start/Stop cycles can crash. Children-process inclusion misses some launchers that re-parent.
 
 **Decision:** `ProcessAudioSource` ships in v1 as **opt-in advanced toggle**, never the default. Default remains system loopback.
 
@@ -92,13 +92,13 @@ The research surfaced five points where agent recommendations conflicted; resolu
 
 ### Citations
 - [OBS win-wasapi.cpp](https://github.com/obsproject/obs-studio/blob/master/plugins/win-wasapi/win-wasapi.cpp)
-- [Loopback Recording — Microsoft Learn](https://learn.microsoft.com/en-us/windows/win32/coreaudio/loopback-recording)
-- [Matthew van Eerde — WASAPI loopback sample](https://learn.microsoft.com/en-us/archive/blogs/matthew_van_eerde/sample-wasapi-loopback-capture-record-what-you-hear)
+- [Loopback Recording. Microsoft Learn](https://learn.microsoft.com/en-us/windows/win32/coreaudio/loopback-recording)
+- [Matthew van Eerde. WASAPI loopback sample](https://learn.microsoft.com/en-us/archive/blogs/matthew_van_eerde/sample-wasapi-loopback-capture-record-what-you-hear)
 - [PROCESS_LOOPBACK_MODE](https://learn.microsoft.com/en-us/windows/win32/api/audioclientactivationparams/ne-audioclientactivationparams-process_loopback_mode)
 - [ApplicationLoopbackAudio sample](https://learn.microsoft.com/en-us/samples/microsoft/windows-classic-samples/applicationloopbackaudio-sample/)
 - [Mozilla cubeb device-change bug 1134078](https://bugzilla.mozilla.org/show_bug.cgi?id=1134078)
 - [miniaudio device-change crash #582](https://github.com/mackron/miniaudio/issues/582)
-- [Donya Quick — Minimizing WASAPI Latency](https://www.donyaquick.com/minimizing-audio-latency-on-windows-10-with-wasapi/)
+- [Donya Quick. Minimizing WASAPI Latency](https://www.donyaquick.com/minimizing-audio-latency-on-windows-10-with-wasapi/)
 
 ---
 
@@ -124,8 +124,8 @@ The five-layer design (Source → Ring → DSP → Snapshot → Consumers) **val
 ### Citations
 - [JUCE AudioProcessor docs](https://docs.juce.com/master/classAudioProcessor.html)
 - [JUCE AudioProcessorValueTreeState](https://docs.juce.com/master/classjuce_1_1AudioProcessorValueTreeState.html)
-- [Ross Bencina — real-time audio 101](http://www.rossbencina.com/code/real-time-audio-programming-101-time-waits-for-nothing)
-- [Timur Doumler — locks in realtime audio](https://timur.audio/using-locks-in-real-time-audio-processing-safely)
+- [Ross Bencina. Real-time audio 101](http://www.rossbencina.com/code/real-time-audio-programming-101-time-waits-for-nothing)
+- [Timur Doumler. Locks in realtime audio](https://timur.audio/using-locks-in-real-time-audio-processing-safely)
 
 ---
 
@@ -137,19 +137,19 @@ The five-layer design (Source → Ring → DSP → Snapshot → Consumers) **val
 [AudioLink (VRChat ecosystem)](https://github.com/llealloo/audiolink) is the most actively coded-against audio-shader contract today. Two of its design decisions invert what we initially planned.
 
 ### Finding: Normalized-to-running-average is the missing pattern
-**MilkDrop / projectM / Butterchurn all expose `bass / running_mean(bass)`** (a value where 1.0 = "normal," >1.3 = "loud") rather than raw values. Preset authors strongly prefer this AGC-relative form because it works across loud/quiet sources without per-preset tuning. Listeningway v1 exposes only raw — this is the single biggest gap.
+**MilkDrop / projectM / Butterchurn all expose `bass / running_mean(bass)`** (a value where 1.0 = "normal," >1.3 = "loud") rather than raw values. Preset authors strongly prefer this AGC-relative form because it works across loud/quiet sources without per-preset tuning. Listeningway v1 exposes only raw. This is the single biggest gap.
 
 **Decision (v2 addition):** `listeningway_volume_norm`, `_bass_norm`, `_mid_norm`, `_treb_norm` (instant ÷ 5–10 second running mean). Plus `_att` smoothed siblings.
 
 ### Finding: AudioLink rejects BPM-locked phase, uses chronotensity instead
-**AudioLink does not expose explicit BPM or beat-phase [0,1).** The authors found exposing BPM is brittle (estimation lag, octave errors, genre dependence) while *chronotensity* — accumulated per-band energy modulo 1.0 — is robust and gives shaders tempo-locked motion without `_Time.y`.
+**AudioLink does not expose explicit BPM or beat-phase [0,1).** The authors found exposing BPM is brittle (estimation lag, octave errors, genre dependence) while *chronotensity*. Accumulated per-band energy modulo 1.0. Is robust and gives shaders tempo-locked motion without `_Time.y`.
 
 **Decision (v2 addition):** Add `listeningway_phase_volume`, `_phase_bass`, `_phase_treble` chronotensity-style accumulators. **Plus** the MIR-style `listeningway_beat_phase` from autocorrelation (works when tempo is confidently locked). Authors choose per use case.
 
-### Finding: Per-band beats as named uniforms — skip
+### Finding: Per-band beats as named uniforms. Skip
 Despite the MIR research recommending per-band onset detection (which we *do* need internally for tempo tracking), no major visualizer system exposes kick/snare/hat as named uniforms. Shader authors derive these from `freqbands`.
 
-**Decision:** Compute per-band onsets internally for the tempo tracker. Expose them only via per-band history arrays (cheap, more flexible) — not as named uniforms.
+**Decision:** Compute per-band onsets internally for the tempo tracker. Expose them only via per-band history arrays (cheap, more flexible). Not as named uniforms.
 
 ### Finding: Multiple band counts is a cheap win
 [Wallpaper Engine](https://docs.wallpaperengine.io/en/scene/shader/variables.html) exposes `g_AudioSpectrum16/32/64Left[]` variants. Many shaders want 8 or 16 bins for bar visualizers without aliasing 64 down.
@@ -180,11 +180,11 @@ AudioLink's most-praised feature is per-band history (128 frames). Enables water
 ## 5. K-weighting / LUFS
 
 ### Finding: Full LUFS is overkill; AGC matters more
-The LUFS research recommended adding a K-weighted 400 ms momentary loudness uniform. The visualizer research independently surfaced that **AGC normalization** (running-mean-relative) is what shader authors actually want — LUFS is for broadcast compliance, not music reactivity.
+The LUFS research recommended adding a K-weighted 400 ms momentary loudness uniform. The visualizer research independently surfaced that **AGC normalization** (running-mean-relative) is what shader authors actually want. LUFS is for broadcast compliance, not music reactivity.
 
 ### Resolution: Both, separated by purpose
-- `listeningway_volume_norm` — **AGC-normalized** raw RMS volume ÷ 5–10 second running mean. **Primary** uniform for shader authors. Solves "preset works at any source volume."
-- `listeningway_loudness` — **K-weighted** 400 ms momentary RMS. Optional, perceptually meaningful slow envelope. Cost: two biquads per channel + sliding-window sum.
+- `listeningway_volume_norm`. **AGC-normalized** raw RMS volume ÷ 5–10 second running mean. **Primary** uniform for shader authors. Solves "preset works at any source volume."
+- `listeningway_loudness`. **K-weighted** 400 ms momentary RMS. Optional, perceptually meaningful slow envelope. Cost: two biquads per channel + sliding-window sum.
 
 Both are cheap (negligible vs FFT). They serve different shader needs and don't conflict.
 
@@ -204,7 +204,7 @@ For other sample rates: shelf at f0=1681.9744 Hz, G=3.99984 dB, Q=0.70717; HPF a
 ### Citations
 - [ITU-R BS.1770-5 (Nov 2023, PDF)](https://www.itu.int/dms_pubrec/itu-r/rec/bs/R-REC-BS.1770-5-202311-I!!PDF-E.pdf)
 - [libebur128 reference impl](https://github.com/jiixyj/libebur128)
-- [JUCE forum — BS.1770 IIR coefficients](https://forum.juce.com/t/itu-r-bs-1770-loudness-measurement-iir-filter-coefficients/59167)
+- [JUCE forum. BS.1770 IIR coefficients](https://forum.juce.com/t/itu-r-bs-1770-loudness-measurement-iir-filter-coefficients/59167)
 
 ---
 
@@ -212,7 +212,7 @@ For other sample rates: shelf at f0=1681.9744 Hz, G=3.99984 dB, Q=0.70717; HPF a
 
 Two tensions emerged between the lock-free agent's recommendations and the pipeline-architecture agent's recommendations.
 
-### Tension 1 — SPSC ring: hand-rolled vs moodycamel ReaderWriterQueue
+### Tension 1. SPSC ring: hand-rolled vs moodycamel ReaderWriterQueue
 
 | Option | Pros | Cons |
 |---|---|---|
@@ -223,7 +223,7 @@ Two tensions emerged between the lock-free agent's recommendations and the pipel
 
 The hand-rolled pattern remains documented (in this notes file) as a fallback if moodycamel ever becomes unavailable.
 
-### Tension 2 — Snapshot publication: seqlock vs triple-buffer
+### Tension 2. Snapshot publication: seqlock vs triple-buffer
 
 | Option | Pros | Cons |
 |---|---|---|
@@ -275,12 +275,12 @@ Reader:
 
 ### Citations
 - [moodycamel ReaderWriterQueue](https://github.com/cameron314/readerwriterqueue)
-- [Charles Frasch — Lock-free SPSC for Real-Time Audio (CppCon 2023)](https://www.youtube.com/results?search_query=Charles+Frasch+CppCon+2023)
-- [Lamport 1983 — original SPSC paper](https://lamport.azurewebsites.net/pubs/buridan.pdf)
-- [Hans Boehm — Can Seqlocks Get Along with PL Memory Models (HPL 2012)](https://www.hpl.hp.com/techreports/2012/HPL-2012-68.pdf)
+- [Charles Frasch. Lock-free SPSC for Real-Time Audio (CppCon 2023)](https://www.youtube.com/results?search_query=Charles+Frasch+CppCon+2023)
+- [Lamport 1983. Original SPSC paper](https://lamport.azurewebsites.net/pubs/buridan.pdf)
+- [Hans Boehm. Can Seqlocks Get Along with PL Memory Models (HPL 2012)](https://www.hpl.hp.com/techreports/2012/HPL-2012-68.pdf)
 - [Linux kernel seqlock](https://en.wikipedia.org/wiki/Seqlock)
-- [Ruurd Adema — Triple Buffering](https://r18a.nl/triple-buffering/)
-- [1024cores — SPSC analysis](https://www.1024cores.net/home/lock-free-algorithms/queues/unbounded-spsc-queue)
+- [Ruurd Adema. Triple Buffering](https://r18a.nl/triple-buffering/)
+- [1024cores. SPSC analysis](https://www.1024cores.net/home/lock-free-algorithms/queues/unbounded-spsc-queue)
 
 ---
 
@@ -321,8 +321,8 @@ Reader:
 
 These decisions don't need to be made at the ADR level but are worth flagging:
 
-- **AGC time constant** — start at 5 s running mean for `_norm` siblings; expose as a setting.
-- **Chronotensity rate constants** — start at 1 Hz baseline modulated by band energy; tune by feel.
-- **History uniform update rate** — match audio publish rate (~60-200 Hz); shader authors can downsample.
-- **Spectral centroid normalization** — divide by Nyquist (sr/2) for [0,1] uniform range.
-- **Tempo prior σ** — start at 0.7 octaves; widen if too "pulled toward 120" on actual tracks.
+- **AGC time constant**. Start at 5 s running mean for `_norm` siblings; expose as a setting.
+- **Chronotensity rate constants**. Start at 1 Hz baseline modulated by band energy; tune by feel.
+- **History uniform update rate**. Match audio publish rate (~60-200 Hz); shader authors can downsample.
+- **Spectral centroid normalization**. Divide by Nyquist (sr/2) for [0,1] uniform range.
+- **Tempo prior σ**. Start at 0.7 octaves; widen if too "pulled toward 120" on actual tracks.

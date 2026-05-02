@@ -2,7 +2,7 @@
 
 ## Status
 
-Accepted — 2026-05-02
+Accepted, 2026-05-02
 
 ## Context
 
@@ -94,7 +94,7 @@ out.rgb = ramp(t).rgb * intensity
 This is the simplest mapping that visibly works on any device topology
 (keyboards, mice, RAM strips, fan rings, case stripes) without
 device-specific knowledge. It deliberately does not try to be smart
-about zone roles — every LED participates as part of the spectrum.
+about zone roles. Every LED participates as part of the spectrum.
 
 Per-controller overrides (e.g. "use this device only for beat flash")
 are a future refinement; this v1 mapping is intentionally simple.
@@ -173,7 +173,7 @@ the main toggle. Implemented via
   OpenRGB version differences.
 - **Mapping is opinionated but visible.** "Every LED participates as
   part of the spectrum" guarantees the user sees motion as soon as
-  audio plays — there's no zero-feedback failure mode where they
+  audio plays. There's no zero-feedback failure mode where they
   enable the consumer and nothing changes.
 
 ### Negative
@@ -235,27 +235,26 @@ if users ask for it.
 
 ### Bundle OpenRGB itself
 
-**Rejected.** OpenRGB is GPLv2 — incompatible with our vendoring policy
+**Rejected.** OpenRGB is GPLv2. Incompatible with our vendoring policy
 of permissive licenses, and the kernel-mode driver pieces are out of
 scope for an in-process ReShade addon. OpenRGB stays a user-installed
 prerequisite.
 
 ### Auto-detect "spectrum-friendly" zones (e.g. keyboard rows, RAM strips)
 
-**Deferred.** Tempting, but no convention exists across vendors —
-zone names are not standardized, zone types (`Single` / `Linear` /
+**Deferred.** Tempting, but no convention exists across vendors. Zone names are not standardized, zone types (`Single` / `Linear` /
 `Matrix`) only weakly correlate with intent, and any heuristic will
 be wrong somewhere. v1 paints all LEDs uniformly as part of the
 spectrum, which is the lowest-surprise default.
 
 ## References
 
-- ADR-0010 — `IOutputConsumer` abstraction; vendoring policy; security
+- ADR-0010. `IOutputConsumer` abstraction; vendoring policy; security
   stance for toggleable network consumers.
-- ADR-0011 — sibling ADR for the OSC consumer.
+- ADR-0011. Sibling ADR for the OSC consumer.
 - [Youda008/OpenRGB-cppSDK on GitHub](https://github.com/Youda008/OpenRGB-cppSDK)
 - [OpenRGB project home](https://openrgb.org)
 - [`third_party/Youda008-OpenRGB-cppSDK/ATTRIBUTION.md`](../../third_party/Youda008-OpenRGB-cppSDK/ATTRIBUTION.md)
 - [`src/output/openrgb_consumer.cpp`](../../src/output/openrgb_consumer.cpp)
 - OpenRGB GitLab issue [#2989 (CPU wake-ups)](https://gitlab.com/CalcProgrammer1/OpenRGB/-/issues/2989)
-- OpenRGB GitLab issue [#1273 (anti-cheat)](https://gitlab.com/CalcProgrammer1/OpenRGB/-/issues/1273) — affects the OpenRGB *server* due to its kernel-mode drivers; not a Listeningway exposure.
+- OpenRGB GitLab issue [#1273 (anti-cheat)](https://gitlab.com/CalcProgrammer1/OpenRGB/-/issues/1273). Affects the OpenRGB *server* due to its kernel-mode drivers; not a Listeningway exposure.

@@ -1,18 +1,18 @@
-# ADR-0004: Configuration — single Settings struct, declarative bounds, auto-marshalled JSON
+# ADR-0004: Configuration. Single Settings struct, declarative bounds, auto-marshalled JSON
 
 ## Status
 
-Accepted — 2026-05-01
+Accepted, 2026-05-01
 
 ## Context
 
 v1 has the same setting declared in three places that drift from each other:
 
-1. **The default value** — declared in `src/core/constants.h` as a `constexpr float DEFAULT_*`.
-2. **The validator clamp range** — declared in `Configuration::Validate()` as a magic-number `std::clamp(field, lo, hi)` call.
-3. **The UI slider range** — declared in `src/core/constants.h` as a `constexpr float OVERLAY_*_MIN/MAX`.
+1. **The default value**. Declared in `src/core/constants.h` as a `constexpr float DEFAULT_*`.
+2. **The validator clamp range**. Declared in `Configuration::Validate()` as a magic-number `std::clamp(field, lo, hi)` call.
+3. **The UI slider range**. Declared in `src/core/constants.h` as a `constexpr float OVERLAY_*_MIN/MAX`.
 
-The recent `frequency.logStrength` bug was the canonical example: default `0.1`, validator range `[0.2, 3.0]`, UI slider range `[0.01, 1.5]`. Save the default, load the file, validator clamps `0.1` to `0.2` — value lost. Three independent declarations, three opportunities to drift.
+The recent `frequency.logStrength` bug was the canonical example: default `0.1`, validator range `[0.2, 3.0]`, UI slider range `[0.01, 1.5]`. Save the default, load the file, validator clamps `0.1` to `0.2`. Value lost. Three independent declarations, three opportunities to drift.
 
 In addition, JSON marshalling is hand-written: ~100 lines of `j["frequency"] = { {"logStrength", frequency.logStrength}, ... }` followed by ~80 lines of `load_if(f, "logStrength", ...)`. Adding a field requires touching both halves *and* the validator *and* the UI; forgetting any one is a silent bug.
 
@@ -37,7 +37,7 @@ struct Setting {
 };
 ```
 
-(Specializations or extensions for non-numeric settings — e.g. `Setting<std::string>` for the source code, `Setting<bool>` — follow the same pattern with appropriate validation.)
+(Specializations or extensions for non-numeric settings. E.g. `Setting<std::string>` for the source code, `Setting<bool>`. Follow the same pattern with appropriate validation.)
 
 ### Single `Settings` struct as the persisted shape
 
@@ -80,7 +80,7 @@ Each DSP stage caches its own `Settings` snapshot and the version counter it was
 `Setting<T>::clamp(candidate)` is called:
 1. After deserialization from JSON (load path).
 2. When the overlay writes a new value (UI path).
-3. Never on the read path — the DSP thread trusts that whatever's in the live `Settings` snapshot is already validated.
+3. Never on the read path. The DSP thread trusts that whatever's in the live `Settings` snapshot is already validated.
 
 This eliminates the v1 drift class because a single `Setting<T>::clamp` call is the *only* validator anywhere; UI sliders read `Setting<T>::min`/`max` for their range; persistence reads `Setting<T>::default_value` for missing fields.
 
@@ -98,7 +98,7 @@ The `Settings` struct holds only persistent configuration. Transient runtime sta
 |---|---|---|
 | User-set tunables: amplifiers, EQ, beat thresholds, AGC window, beat profile, debug flags, source code | Computed analysis: volume, bands, beat, pan, direction8, tempo, snapshots history | Source-detected sample rate; current capture format; FFT cache; band-edge cache |
 
-Sample rate is detected at capture time and lives on the `AnalysisFrame` (via `Format`). It is never written to the config file — the config file should be portable across audio devices.
+Sample rate is detected at capture time and lives on the `AnalysisFrame` (via `Format`). It is never written to the config file. The config file should be portable across audio devices.
 
 ## Consequences
 
@@ -144,6 +144,6 @@ Sample rate is detected at capture time and lives on the `AnalysisFrame` (via `F
 ## References
 
 - v1 bug demonstrating the drift: `frequency.logStrength` reset on save+load (`src/configuration/Configuration.cpp` line 51 in commit 7cda8e8).
-- [research-notes.md §3](research-notes.md) — JUCE `AudioProcessorValueTreeState` validates the "atomic snapshot read on hot path" pattern.
-- [research-notes.md §4](research-notes.md) — visualizer research that motivates additional settings.
-- ADR-0005 — uniform contract; configuration changes ripple to which uniforms are populated but uniform names themselves are stable.
+- [research-notes.md §3](research-notes.md). JUCE `AudioProcessorValueTreeState` validates the "atomic snapshot read on hot path" pattern.
+- [research-notes.md §4](research-notes.md). Visualizer research that motivates additional settings.
+- ADR-0005. Uniform contract; configuration changes ripple to which uniforms are populated but uniform names themselves are stable.

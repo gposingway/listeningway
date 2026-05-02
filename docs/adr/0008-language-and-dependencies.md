@@ -2,11 +2,11 @@
 
 ## Status
 
-Accepted — 2026-05-01
+Accepted, 2026-05-01
 
 ## Context
 
-v1 targets C++17. v2 commits to a clean-room rebuild (ADR-0001), which is a natural moment to revisit language version, library dependencies, and the build/test toolchain. ADR-0001's beta-release scope removes any compatibility constraint on tooling — we can pick what's right for v2 now.
+v1 targets C++17. v2 commits to a clean-room rebuild (ADR-0001), which is a natural moment to revisit language version, library dependencies, and the build/test toolchain. ADR-0001's beta-release scope removes any compatibility constraint on tooling. We can pick what's right for v2 now.
 
 The platform constraints are:
 - **Windows-only.** ReShade is Windows-focused; cross-platform doesn't pay.
@@ -33,7 +33,7 @@ Specific C++20 features v2 uses meaningfully:
 | Three-way comparison (`<=>`) where useful | Value-type comparisons in tests | Less boilerplate |
 | `consteval` | Compile-time channel-layout tables, format constants | Zero-runtime-cost lookups |
 
-C++20 modules are **not** used for v2 — MSVC support is acceptable but not yet smooth across vcpkg-built dependencies. Reconsider for a later v2.x.
+C++20 modules are **not** used for v2. MSVC support is acceptable but not yet smooth across vcpkg-built dependencies. Reconsider for a later v2.x.
 
 C++23 features (e.g. `std::expected`, `std::print`) are **not** used; MSVC support is partial as of mid-2026 and the gain over C++20 is marginal.
 
@@ -103,7 +103,7 @@ src/
   config/                       # Setting<T>, Settings, Store
   output/                       # shader_contract.h, UniformPublisher
   overlay/                      # ImGui panels
-  third_party/                  # vendored single-header libs (readerwriterqueue.h, rapidcheck — if not via vcpkg)
+  third_party/                  # vendored single-header libs (readerwriterqueue.h, rapidcheck. If not via vcpkg)
 tests/
   CMakeLists.txt
   generators.h
@@ -136,8 +136,8 @@ Per Phase 3 v1 work, the test executable opts into `/MT` to match `gtest` from t
 
 ### Neutral
 
-- **Build time** — C++20 compilation is slightly slower than C++17 due to concepts and modules-related machinery (even when modules aren't used). Negligible for a project this size.
-- **Static analysis** — clang-tidy / cppcheck both support C++20 sufficiently for our needs.
+- **Build time**. C++20 compilation is slightly slower than C++17 due to concepts and modules-related machinery (even when modules aren't used). Negligible for a project this size.
+- **Static analysis**. Clang-tidy / cppcheck both support C++20 sufficiently for our needs.
 
 ## Alternatives considered
 
@@ -170,8 +170,8 @@ Per Phase 3 v1 work, the test executable opts into `/MT` to match `gtest` from t
 
 ## References
 
-- ADR-0001 — beta scope; toolchain choice freedom.
-- ADR-0002 — pipeline architecture; `moodycamel::ReaderWriterQueue` per [research-notes.md §6](research-notes.md).
-- ADR-0004 — `nlohmann-json` intrusive marshalling.
-- ADR-0006 — `gtest` + `rapidcheck` for testing.
-- ADR-0007 — v1 scope; detection-technique implementation cites kissfft.
+- ADR-0001. Beta scope; toolchain choice freedom.
+- ADR-0002. Pipeline architecture; `moodycamel::ReaderWriterQueue` per [research-notes.md §6](research-notes.md).
+- ADR-0004. `nlohmann-json` intrusive marshalling.
+- ADR-0006. `gtest` + `rapidcheck` for testing.
+- ADR-0007. V1 scope; detection-technique implementation cites kissfft.

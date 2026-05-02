@@ -1,4 +1,4 @@
-# Research notes — per-process audio capture for ProcessAudioSource
+# Research notes. Per-process audio capture for ProcessAudioSource
 
 Consolidated findings from three parallel research agents (May 2026).
 Feeds the upcoming ADR-0009 (ProcessAudioSource design).
@@ -10,7 +10,7 @@ The industry has converged on `ActivateAudioInterfaceAsync` with
 API). OBS 28+, Streamlabs, Discord all use it; NVIDIA Broadcast and
 Krisp ship virtual driver pairs (different UX, driver install required);
 Voicemeeter / VB-Cable are pure user-routed virtual cables. There is
-no second blessed Microsoft API for per-app audio buffers — only
+no second blessed Microsoft API for per-app audio buffers. Only
 metering data is available via the Audio Session APIs.
 
 **Listeningway's situation is uniquely advantageous**: we are a
@@ -24,15 +24,15 @@ not apply.
 | Tool | Technique | Driver install? | Routing? |
 |---|---|---|---|
 | **OBS Studio** (28+) | `ActivateAudioInterfaceAsync` + `PROCESS_LOOPBACK` | No | Pick PID from dropdown |
-| **Streamlabs Desktop** | OBS fork — same API path | No | Same as OBS |
+| **Streamlabs Desktop** | OBS fork. Same API path | No | Same as OBS |
 | **Discord** stream-with-audio | Historically API hooking; now believed migrated to `PROCESS_LOOPBACK` on supported builds | No | Automatic |
 | **NVIDIA Broadcast / RTX Voice** | Virtual mic/speaker driver pair | Yes (signed) | Manual per-app |
 | **Krisp** | Virtual mic/speaker driver pair | Yes (signed) | Manual per-app |
 | **Voicemeeter** (VB-Audio) | Virtual cable + user-mode mixer | Yes (signed) | Manual per-app |
 | **VB-Cable** | Virtual cable, no mixer | Yes (signed) | Manual per-app |
 | **XSplit Broadcaster** | Virtual cable + `PROCESS_LOOPBACK` on Win11 | Yes (driver) | Mix |
-| **Equalizer APO** | sAPO endpoint-level processing | Yes (registry) | N/A — endpoint-only |
-| **VRChat AudioLink** | In-process Unity `GetOutputData` | No | N/A — same process |
+| **Equalizer APO** | sAPO endpoint-level processing | Yes (registry) | N/A. Endpoint-only |
+| **VRChat AudioLink** | In-process Unity `GetOutputData` | No | N/A. Same process |
 
 The pattern: **anything serious that doesn't ship a driver uses
 `PROCESS_LOOPBACK`.** Anything that wanted broad reach and didn't have
@@ -75,13 +75,13 @@ constexpr DWORD kStreamFlags =
 ```
 
 Note: **event mode works for process loopback** (unlike system
-loopback, where `EVENTCALLBACK | LOOPBACK` is documented broken — the
+loopback, where `EVENTCALLBACK | LOOPBACK` is documented broken. The
 event never fires). Process loopback uses a different code path
 through `ActivateAudioInterfaceAsync` and event-mode is the OBS-tested
 path.
 
 `AUTOCONVERTPCM` is unnecessary because we control the format.
-The MS sample misplaces this flag in `hnsPeriodicity` — don't
+The MS sample misplaces this flag in `hnsPeriodicity`. Don't
 copy-paste blindly
 ([windows-classic-samples #196](https://github.com/microsoft/Windows-classic-samples/issues/196)).
 
@@ -94,7 +94,7 @@ target PID and its child processes. Recommended for:
   EVE, some launchers).
 - Games with media playback components in helper processes.
 
-`EXCLUDE_TARGET_PROCESS_TREE` is the inverse — capture everything
+`EXCLUDE_TARGET_PROCESS_TREE` is the inverse. Capture everything
 *except* the target. Useful for "system audio minus voice chat."
 
 For Listeningway targeting `GetCurrentProcessId()`, **INCLUDE** is
@@ -109,7 +109,7 @@ audio plus any child renderers.
 | Crash on alt-tab from exclusive-fullscreen | [Q&A 1036316](https://learn.microsoft.com/en-us/answers/questions/1036316/) unfixed | SEH-wrap `GetBuffer`; tear down + re-activate on AV |
 | Rapid Start/Stop race crash | Same Q&A | State machine: only `Stop` while `Capturing` |
 | 60-minute audio drift / crackle | OBS issues #8064, #8086 still open | Watchdog timer: re-activate if `u64DevicePosition` stalls |
-| ARM64: `GetNextPacketSize` returns 0 | [Q&A 5694431](https://learn.microsoft.com/en-us/answers/questions/5694431/) | x64-only addon — not relevant |
+| ARM64: `GetNextPacketSize` returns 0 | [Q&A 5694431](https://learn.microsoft.com/en-us/answers/questions/5694431/) | x64-only addon. Not relevant |
 | MSIX/UWP packaged apps | Works | n/a for FFXIV |
 | Exclusive-mode targets | Not captured | Detect + warn (rare on FFXIV / modern games) |
 
@@ -122,7 +122,7 @@ deployed base since 2022 with no AC reports. Architecturally invisible:
 - No memory reads.
 - No DLL injection.
 - The PID is passed to `MMDevAPI` which talks to `audiodg.exe`. AC
-  monitors handle access, memory, module loads — none of which happen.
+  monitors handle access, memory, module loads. None of which happen.
 
 Microsoft documents the API for arbitrary PIDs without a consent
 prompt (unlike screen capture's `GraphicsCaptureItem` which requires
@@ -131,7 +131,7 @@ the system picker).
 For Listeningway, we target our own PID, which makes the AC question
 even more academic. FFXIV has no anti-cheat.
 
-## Alternative isolation approaches — surveyed
+## Alternative isolation approaches. Surveyed
 
 ### Audio Session APIs (`IAudioMeterInformation`)
 
@@ -143,7 +143,7 @@ What it IS useful for in Listeningway:
 - Detect that a target PID has an active audio session.
 - "Game has audio" UI signal.
 - A cheap pre-gate for the system-loopback fallback (only run
-  analysis when the target session has non-zero peak — doesn't
+  analysis when the target session has non-zero peak. Doesn't
   isolate Discord OUT, but suppresses noise when game is silent).
 
 Source: [matthewvaneerde](https://matthewvaneerde.wordpress.com/2013/09/26/getting-peak-meters-and-volume-settings-for-all-apps-and-audio-devices-on-the-system/),
@@ -279,8 +279,7 @@ g_system->register_source(std::make_unique<lw::source::OffSource>());
 
 `IAudioMeterInformation` peak gating for the system-loopback path:
 when configured, only run DSP when the addon's PID has non-zero peak
-in its audio session. This is **complementary** to ProcessAudioSource
-— useful for users on older OSes who can't get true isolation but
+in its audio session. This is **complementary** to ProcessAudioSource. Useful for users on older OSes who can't get true isolation but
 still want the visualization to be quiet when the game is silent.
 
 ## Out of scope
@@ -295,14 +294,14 @@ still want the visualization to be quiet when the game is silent.
 - [PROCESS_LOOPBACK_MODE](https://learn.microsoft.com/en-us/windows/win32/api/audioclientactivationparams/ne-audioclientactivationparams-process_loopback_mode)
 - [AUDIOCLIENT_ACTIVATION_PARAMS](https://learn.microsoft.com/en-us/windows/win32/api/audioclientactivationparams/ns-audioclientactivationparams-audioclient_activation_params)
 - [ActivateAudioInterfaceAsync](https://learn.microsoft.com/en-us/windows/win32/api/mmdeviceapi/nf-mmdeviceapi-activateaudiointerfaceasync)
-- [ApplicationLoopback sample](https://learn.microsoft.com/en-us/samples/microsoft/windows-classic-samples/applicationloopbackaudio-sample/) — canonical reference
-- [OBS PR #5218](https://github.com/obsproject/obs-studio/pull/5218) — production reference
+- [ApplicationLoopback sample](https://learn.microsoft.com/en-us/samples/microsoft/windows-classic-samples/applicationloopbackaudio-sample/). Canonical reference
+- [OBS PR #5218](https://github.com/obsproject/obs-studio/pull/5218). Production reference
 - [OBS win-wasapi.cpp](https://github.com/obsproject/obs-studio/blob/master/plugins/win-wasapi/win-wasapi.cpp)
-- [bozbez/win-capture-audio](https://github.com/bozbez/win-capture-audio) — alternative reference impl
-- [MS Q&A 1125409 — `GetMixFormat` E_NOTIMPL workaround](https://learn.microsoft.com/en-us/answers/questions/1125409/)
-- [MS Q&A 1036316 — alt-tab crash](https://learn.microsoft.com/en-us/answers/questions/1036316/)
+- [bozbez/win-capture-audio](https://github.com/bozbez/win-capture-audio). Alternative reference impl
+- [MS Q&A 1125409. `GetMixFormat` E_NOTIMPL workaround](https://learn.microsoft.com/en-us/answers/questions/1125409/)
+- [MS Q&A 1036316. Alt-tab crash](https://learn.microsoft.com/en-us/answers/questions/1036316/)
 - [windows-classic-samples #196](https://github.com/microsoft/Windows-classic-samples/issues/196), [#275](https://github.com/microsoft/Windows-classic-samples/issues/275)
-- [OBS issue #9669 — process-tree toggle](https://github.com/obsproject/obs-studio/issues/9669)
+- [OBS issue #9669. Process-tree toggle](https://github.com/obsproject/obs-studio/issues/9669)
 - [IAudioMeterInformation](https://learn.microsoft.com/en-us/windows/win32/api/endpointvolume/nn-endpointvolume-iaudiometerinformation)
-- [Matthew van Eerde — peak meters per session](https://matthewvaneerde.wordpress.com/2013/09/26/getting-peak-meters-and-volume-settings-for-all-apps-and-audio-devices-on-the-system/)
+- [Matthew van Eerde. Peak meters per session](https://matthewvaneerde.wordpress.com/2013/09/26/getting-peak-meters-and-volume-settings-for-all-apps-and-audio-devices-on-the-system/)
 - [VB-Audio Cable](https://vb-audio.com/Cable/) (power-user fallback only)
