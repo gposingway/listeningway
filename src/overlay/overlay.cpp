@@ -1,9 +1,16 @@
 // ---------------------------------------------
-// v2 overlay. Matches the v1 visual feel: thin progress bars for meters,
-// very compact stacked frequency band bars with red→green gradient,
-// pan bar with center marker, collapsible sections by concern. Adds the
-// per-stage DSP profiler and a full settings panel that exposes every
-// tunable in the v2 Settings struct.
+// v2 overlay.
+//
+// Layout philosophy:
+//   - Each "block" with both visuals AND settings shows the visuals
+//     unconditionally; the settings are tucked behind a collapsed-by-default
+//     `Settings` TreeNode inside the block. Even with everything closed, the
+//     visual dashboard is intact.
+//   - Every interactive row passes through one helper layer that aligns
+//     labels to a global pixel column, so meters and sliders line up
+//     across the entire window.
+//   - Custom thin bars are vertically centered within FrameHeight rows so
+//     they sit on the same baseline as text and ImGui sliders.
 // ---------------------------------------------
 #define IMGUI_DISABLE_INCLUDE_IMCONFIG_H
 #define ImTextureID ImU64
@@ -14,8 +21,10 @@
 #include <algorithm>
 #include <array>
 #include <cmath>
+#include <cstdarg>
 #include <cstdio>
 #include <numbers>
+#include <span>
 #include <string>
 #include <vector>
 
@@ -24,23 +33,175 @@
 
 namespace lw {
 
-// ----- Visual constants (mirrors v1's `OVERLAY_*` set) -------------------
+// ----- Visual constants --------------------------------------------------
 namespace overlay_style {
 constexpr float kBarHeightThin       = 6.0f;
-constexpr float kBarHeightSubMeter   = 5.0f;   // L/R, profiler bars
-constexpr float kBarSpacingSmall     = 2.0f;
-constexpr float kBarSpacingLarge     = 4.0f;
+constexpr float kSubGroupIndent      = 6.0f;
 constexpr float kBarRounding         = 0.0f;
 constexpr float kPanCenterThickness  = 1.0f;
 
 constexpr ImU32 kColorBg            = IM_COL32(40, 40, 40, 128);
 constexpr ImU32 kColorOutline       = IM_COL32(60, 60, 60, 128);
 constexpr ImU32 kColorCenterMarker  = IM_COL32(255, 255, 255, 180);
-constexpr ImU32 kColorBeatAccent    = IM_COL32(255, 130,  60, 220);
 constexpr ImU32 kColorProfiler      = IM_COL32(120, 200, 255, 200);
 }  // namespace overlay_style
 
 namespace {
+
+float g_label_col = 0.0f;       ///< pixel X (window-relative) where meters/widgets start
+float g_value_col_w = 0.0f;     ///< reserved width for the right-side value text
+
+// One-time-per-draw setup of the alignment columns. Computes from the widest
+// label string we know we'll print so every section uses the same layout.
+void compute_columns() {
+    // Use a known-long label for sizing so all rows align even when only a
+    // subset is rendered. We pick the actual longest used label below.
+    const char* probes[] = {
+        "Threshold window (ms):",
+        "Tempo prior \xCF\x83 (oct):",   // UTF-8 σ
+        "Direction Boost:",
+        "Volume:",
+    };
+    float widest = 0.0f;
+    for (const char* p : probes) {
+        widest = std::max(widest, ImGui::CalcTextSize(p).x);
+    }
+    const float spacing = ImGui::GetStyle().ItemSpacing.x;
+    g_label_col   = ImGui::GetCursorPosX() + widest + spacing * 2.0f;
+    g_value_col_w = ImGui::CalcTextSize("99.99 \xC2\xB5s").x + spacing;  // µs leaves room for profiler
+}
+
+void tip(const char* text) {
+    if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled)) {
+        ImGui::SetTooltip("%s", text);
+    }
+}
+
+// Position cursor at label_col, after writing the label flush-left.
+void label_left(const char* label) {
+    ImGui::AlignTextToFramePadding();
+    ImGui::TextUnformatted(label);
+    ImGui::SameLine(g_label_col);
+}
+
+// ---- Row helpers ---------------------------------------------------------
+// All rows occupy exactly FrameHeight vertical space, so meters, sliders,
+// combos, and text rows visually align row-to-row.
+
+void meter_row(const char* label, float value, ImU32 fill,
+               const char* value_fmt = "%.2f") {
+    using namespace overlay_style;
+    label_left(label);
+    const float frame_h = ImGui::GetFrameHeight();
+    const float spacing = ImGui::GetStyle().ItemSpacing.x;
+    // Always reserve the value column so rows align even when this row has
+    // no built-in value text — caller may use SameLine+Text to fill it.
+    const float val_w  = g_value_col_w;
+    const float bar_w  = std::max(8.0f, ImGui::GetContentRegionAvail().x - val_w - spacing);
+
+    auto* dl = ImGui::GetWindowDrawList();
+    const ImVec2 p = ImGui::GetCursorScreenPos();
+    const float y_off = (frame_h - kBarHeightThin) * 0.5f;
+    const ImVec2 bar_tl(p.x, p.y + y_off);
+    const ImVec2 bar_br(p.x + bar_w, bar_tl.y + kBarHeightThin);
+    dl->AddRectFilled(bar_tl, bar_br, kColorBg, kBarRounding);
+    if (value > 0.0f) {
+        const float v = std::clamp(value, 0.0f, 1.0f);
+        dl->AddRectFilled(bar_tl, ImVec2(p.x + v * bar_w, bar_br.y), fill, kBarRounding);
+    }
+    dl->AddRect(bar_tl, bar_br, kColorOutline, kBarRounding);
+    ImGui::Dummy(ImVec2(bar_w, frame_h));
+    if (value_fmt && value_fmt[0]) {
+        ImGui::SameLine();
+        ImGui::Text(value_fmt, value);
+    }
+}
+
+void center_meter_row(const char* label, float value) {
+    using namespace overlay_style;
+    label_left(label);
+    const float frame_h = ImGui::GetFrameHeight();
+    const float spacing = ImGui::GetStyle().ItemSpacing.x;
+    const float val_w  = g_value_col_w;
+    const float bar_w  = std::max(8.0f, ImGui::GetContentRegionAvail().x - val_w - spacing);
+
+    auto* dl = ImGui::GetWindowDrawList();
+    const ImVec2 p = ImGui::GetCursorScreenPos();
+    const float y_off = (frame_h - kBarHeightThin) * 0.5f;
+    const ImVec2 bg_tl(p.x, p.y + y_off);
+    const ImVec2 bg_br(p.x + bar_w, bg_tl.y + kBarHeightThin);
+    dl->AddRectFilled(bg_tl, bg_br, kColorBg, kBarRounding);
+
+    const float v = std::clamp(value, -1.0f, 1.0f);
+    const float center_x = p.x + bar_w * 0.5f;
+    const ImU32 fill = ImGui::GetColorU32(ImGuiCol_PlotHistogram);
+    if (v < 0.0f) {
+        const float w = -v * bar_w * 0.5f;
+        dl->AddRectFilled(ImVec2(center_x - w, bg_tl.y),
+                          ImVec2(center_x, bg_br.y), fill, kBarRounding);
+    } else if (v > 0.0f) {
+        const float w = v * bar_w * 0.5f;
+        dl->AddRectFilled(ImVec2(center_x, bg_tl.y),
+                          ImVec2(center_x + w, bg_br.y), fill, kBarRounding);
+    }
+    dl->AddLine(ImVec2(center_x, bg_tl.y), ImVec2(center_x, bg_br.y),
+                kColorCenterMarker, kPanCenterThickness);
+    dl->AddRect(bg_tl, bg_br, kColorOutline, kBarRounding);
+    ImGui::Dummy(ImVec2(bar_w, frame_h));
+    ImGui::SameLine();
+    ImGui::Text("%+.2f", value);
+}
+
+bool slider_row(const char* label, float* v, float lo, float hi,
+                const char* fmt = "%.2f", const char* tooltip = nullptr) {
+    label_left(label);
+    char id[40]; std::snprintf(id, sizeof(id), "##sf_%s", label);
+    ImGui::PushItemWidth(-1);
+    bool changed = ImGui::SliderFloat(id, v, lo, hi, fmt);
+    ImGui::PopItemWidth();
+    if (tooltip) tip(tooltip);
+    return changed;
+}
+
+bool slider_int_row(const char* label, int* v, int lo, int hi,
+                    const char* tooltip = nullptr) {
+    label_left(label);
+    char id[40]; std::snprintf(id, sizeof(id), "##si_%s", label);
+    ImGui::PushItemWidth(-1);
+    bool changed = ImGui::SliderInt(id, v, lo, hi);
+    ImGui::PopItemWidth();
+    if (tooltip) tip(tooltip);
+    return changed;
+}
+
+bool combo_row(const char* label, int* sel,
+               const char* const items[], int count,
+               const char* tooltip = nullptr) {
+    label_left(label);
+    char id[40]; std::snprintf(id, sizeof(id), "##co_%s", label);
+    ImGui::PushItemWidth(-1);
+    bool changed = ImGui::Combo(id, sel, items, count);
+    ImGui::PopItemWidth();
+    if (tooltip) tip(tooltip);
+    return changed;
+}
+
+bool checkbox_row(const char* label, bool* v, const char* tooltip = nullptr) {
+    label_left(label);
+    char id[40]; std::snprintf(id, sizeof(id), "##cb_%s", label);
+    bool changed = ImGui::Checkbox(id, v);
+    if (tooltip) tip(tooltip);
+    return changed;
+}
+
+void info_row(const char* label, const char* fmt, ...) {
+    label_left(label);
+    va_list ap; va_start(ap, fmt);
+    ImGui::TextV(fmt, ap);
+    va_end(ap);
+}
+
+// ---- Common building blocks ---------------------------------------------
 
 const char* state_label(State s) {
     switch (s) {
@@ -64,56 +225,7 @@ const char* format_label(int channels) {
     }
 }
 
-// Tooltip helper: matches v1's "show on hover" idiom.
-void tip(const char* text) {
-    if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled)) {
-        ImGui::SetTooltip("%s", text);
-    }
-}
-
-// Thin meter: a solid filled bar over a dark background, no rounding.
-void thin_meter(float value, float width, float height, ImU32 fill_color) {
-    using namespace overlay_style;
-    auto* dl = ImGui::GetWindowDrawList();
-    const ImVec2 p = ImGui::GetCursorScreenPos();
-    const ImVec2 bg_max(p.x + width, p.y + height);
-    dl->AddRectFilled(p, bg_max, kColorBg, kBarRounding);
-    if (value > 0.0f) {
-        const ImVec2 fill_max(p.x + std::clamp(value, 0.0f, 1.0f) * width, p.y + height);
-        dl->AddRectFilled(p, fill_max, fill_color, kBarRounding);
-    }
-    dl->AddRect(p, bg_max, kColorOutline, kBarRounding);
-    ImGui::Dummy(ImVec2(width, height));
-}
-
-// Center-anchored bar (pan / signed value): negative grows left, positive right.
-void center_bar(float value, float width, float height) {
-    using namespace overlay_style;
-    auto* dl = ImGui::GetWindowDrawList();
-    const ImVec2 p = ImGui::GetCursorScreenPos();
-    const float center_x = p.x + width * 0.5f;
-    const ImVec2 bg_max(p.x + width, p.y + height);
-    dl->AddRectFilled(p, bg_max, kColorBg, kBarRounding);
-
-    const float v = std::clamp(value, -1.0f, 1.0f);
-    const ImU32 fill = ImGui::GetColorU32(ImGuiCol_PlotHistogram);
-    if (v < 0.0f) {
-        const float w = -v * width * 0.5f;
-        dl->AddRectFilled(ImVec2(center_x - w, p.y),
-                          ImVec2(center_x, p.y + height), fill, kBarRounding);
-    } else if (v > 0.0f) {
-        const float w = v * width * 0.5f;
-        dl->AddRectFilled(ImVec2(center_x, p.y),
-                          ImVec2(center_x + w, p.y + height), fill, kBarRounding);
-    }
-    dl->AddLine(ImVec2(center_x, p.y), ImVec2(center_x, p.y + height),
-                kColorCenterMarker, kPanCenterThickness);
-    dl->AddRect(p, bg_max, kColorOutline, kBarRounding);
-    ImGui::Dummy(ImVec2(width, height));
-}
-
-// Compact frequency-band display: stacked thin bars, red→green gradient
-// by index (low frequencies red, highs green). Direct copy of v1's idiom.
+// Compact stacked frequency band display with red→green gradient.
 void compact_band_bars(std::span<const float> values, float amp, float width) {
     using namespace overlay_style;
     if (values.empty() || width <= 0.0f) return;
@@ -125,8 +237,8 @@ void compact_band_bars(std::span<const float> values, float amp, float width) {
         const float v = std::clamp(values[i] * amp, 0.0f, 1.0f);
         const float t = static_cast<float>(i) / static_cast<float>(std::max<size_t>(1, n - 1));
         const ImU32 col = IM_COL32(
-            25 + static_cast<int>(230 * (1.0f - t)),  // R: high at low-i
-            25 + static_cast<int>(230 * t),            // G: high at high-i
+            25 + static_cast<int>(230 * (1.0f - t)),
+            25 + static_cast<int>(230 * t),
             230, 255);
         const ImVec2 bar_tl(start.x, start.y + i * bar_h);
         const ImVec2 bar_br(start.x + v * width, bar_tl.y + bar_h);
@@ -137,28 +249,40 @@ void compact_band_bars(std::span<const float> values, float amp, float width) {
     ImGui::Dummy(ImVec2(width, bar_h * static_cast<float>(n)));
 }
 
-// Slider helpers (so each Setting line is one call site).
-bool slider_f(const char* label, float* v, float lo, float hi,
-              const char* fmt = "%.2f", const char* tooltip = nullptr) {
-    bool changed = ImGui::SliderFloat(label, v, lo, hi, fmt);
-    if (tooltip) tip(tooltip);
-    return changed;
+// Default-collapsed Settings sub-tree. Returns true if open (caller draws
+// config inside). `section_id` MUST be unique across the overlay, otherwise
+// ImGui hashes the same ID for every "Settings" node and they toggle as one.
+bool settings_subtree(const char* section_id) {
+    const ImGuiTreeNodeFlags flags =
+        ImGuiTreeNodeFlags_SpanAvailWidth | ImGuiTreeNodeFlags_NoTreePushOnOpen;
+    char id[64];
+    std::snprintf(id, sizeof(id), "Settings##%s", section_id);
+    ImGui::PushStyleColor(ImGuiCol_Text, ImGui::GetStyleColorVec4(ImGuiCol_TextDisabled));
+    const bool open = ImGui::TreeNodeEx(id, flags);
+    ImGui::PopStyleColor();
+    return open;
 }
-bool slider_i(const char* label, int* v, int lo, int hi,
-              const char* tooltip = nullptr) {
-    bool changed = ImGui::SliderInt(label, v, lo, hi);
-    if (tooltip) tip(tooltip);
-    return changed;
+
+// Section title (always visible, never collapses).
+void section_title(const char* title) {
+    ImGui::SeparatorText(title);
+}
+
+// Sub-group label inside a section (e.g. "Phases:"). Items below should be
+// indented kSubGroupIndent.
+void subgroup_label(const char* label) {
+    ImGui::Spacing();
+    ImGui::TextDisabled("%s", label);
 }
 
 }  // namespace
 
-// ---------------- Sections -----------------------------------------------
+// ---------------- Section: System & Source -------------------------------
 
-static void draw_system_and_source(AudioSystem& system, config::Settings& cfg, bool& dirty) {
-    ImGui::Text("State: %s", state_label(system.state()));
-    ImGui::SameLine();
-    ImGui::TextDisabled(" • Listeningway v2.0.0-beta");
+static void section_system(AudioSystem& system, config::Settings& cfg, bool& dirty) {
+    section_title("System & Source");
+
+    info_row("State:", "%s   \xE2\x80\xA2   Listeningway v2.0.0-beta", state_label(system.state()));
 
     const auto sources = system.available_sources();
     int current = 0;
@@ -171,149 +295,111 @@ static void draw_system_and_source(AudioSystem& system, config::Settings& cfg, b
     for (auto& n : names) name_ptrs.push_back(n.c_str());
 
     int sel = current;
+    label_left("Source:");
     ImGui::PushItemWidth(-1);
-    if (ImGui::Combo("##source", &sel, name_ptrs.data(), (int)name_ptrs.size())
+    if (ImGui::Combo("##source_combo", &sel, name_ptrs.data(), (int)name_ptrs.size())
         && sel >= 0 && sel < (int)sources.size()) {
-        // switch_source persists the change directly via Store::mutate+save,
-        // so we don't double-publish here.
         system.switch_source(sources[sel].code);
     }
     ImGui::PopItemWidth();
-    tip("Choose audio capture source. 'Off' disables analysis.");
+    tip("Audio capture source. 'Off' disables analysis.");
 
-    if (ImGui::Checkbox("Enable SIMD (SSE/AVX)", &cfg.audio.simd_enabled)) dirty = true;
-    tip("Use SIMD intrinsics in DSP stages where available. Disable to test scalar paths.");
-
-    if (ImGui::Checkbox("Debug logging", &cfg.debug.debug_logging)) dirty = true;
-    tip("Verbose log to listeningway.log. Disabled by default.");
+    if (settings_subtree("system")) {
+        ImGui::Indent(overlay_style::kSubGroupIndent);
+        if (checkbox_row("Enable SIMD (SSE/AVX)", &cfg.audio.simd_enabled,
+            "Use SIMD intrinsics in DSP stages where available."))   dirty = true;
+        if (checkbox_row("Debug logging", &cfg.debug.debug_logging,
+            "Verbose log to listeningway.log."))                     dirty = true;
+        ImGui::Unindent(overlay_style::kSubGroupIndent);
+    }
 }
 
-static void draw_levels_and_beat(const AudioSnapshot& snap, config::Settings& cfg, bool& dirty) {
-    using namespace overlay_style;
+// ---------------- Section: Levels & Beat ---------------------------------
 
-    // Layout: label + bar with a fixed bar_start_x so all rows align.
-    const float label_w = ImGui::CalcTextSize("Loudness:").x;
-    const float bar_start_x = ImGui::GetCursorPosX() + label_w + ImGui::GetStyle().ItemSpacing.x * 2.0f;
-    const float bar_width = ImGui::GetContentRegionAvail().x - (bar_start_x - ImGui::GetCursorPosX());
-
-    auto label_then = [&](const char* lbl) {
-        ImGui::AlignTextToFramePadding();
-        ImGui::Text("%s", lbl);
-        ImGui::SameLine(bar_start_x);
-    };
+static void section_levels(const AudioSnapshot& snap, config::Settings& cfg, bool& dirty) {
+    section_title("Levels");
 
     const float vol_amp = cfg.frequency.amplifier_volume;
-    label_then("Volume:");
-    ImGui::ProgressBar(std::clamp(snap.volume * vol_amp, 0.0f, 1.0f),
-                       ImVec2(bar_width, 0.0f));
-    ImGui::SameLine();
-    ImGui::Text("%.2f", snap.volume * vol_amp);
-
-    // L/R compact bars under the main volume.
-    const float small_spacing = kBarSpacingSmall;
-    const float half_w = (bar_width - small_spacing) * 0.5f;
-    ImGui::Dummy(ImVec2(0, kBarSpacingSmall));
-    ImGui::Dummy(ImVec2(0, 0)); ImGui::SameLine(bar_start_x);
-    const ImVec2 lr_pos = ImGui::GetCursorScreenPos();
     const ImU32 fill = ImGui::GetColorU32(ImGuiCol_PlotHistogram);
-    auto* dl = ImGui::GetWindowDrawList();
-    // Left grows from center → left
-    {
-        const float center_x = lr_pos.x + bar_width * 0.5f;
-        const ImVec2 bg_min(lr_pos.x, lr_pos.y);
-        const ImVec2 bg_max(center_x - small_spacing * 0.5f, lr_pos.y + kBarHeightSubMeter);
-        dl->AddRectFilled(bg_min, bg_max, kColorBg, kBarRounding);
-        const float lv = std::clamp(snap.volume_left * vol_amp, 0.0f, 1.0f);
-        if (lv > 0.0f) {
-            dl->AddRectFilled(
-                ImVec2(bg_max.x - lv * half_w, lr_pos.y),
-                ImVec2(bg_max.x, lr_pos.y + kBarHeightSubMeter), fill, kBarRounding);
-        }
-        // Right grows from center → right
-        const ImVec2 bg2_min(center_x + small_spacing * 0.5f, lr_pos.y);
-        const ImVec2 bg2_max(lr_pos.x + bar_width, lr_pos.y + kBarHeightSubMeter);
-        dl->AddRectFilled(bg2_min, bg2_max, kColorBg, kBarRounding);
-        const float rv = std::clamp(snap.volume_right * vol_amp, 0.0f, 1.0f);
-        if (rv > 0.0f) {
-            dl->AddRectFilled(
-                ImVec2(bg2_min.x, lr_pos.y),
-                ImVec2(bg2_min.x + rv * half_w, lr_pos.y + kBarHeightSubMeter),
-                fill, kBarRounding);
-        }
+
+    meter_row("Volume:", std::clamp(snap.volume * vol_amp, 0.0f, 1.0f), fill, "%.2f");
+
+    subgroup_label("Stereo:");
+    ImGui::Indent(overlay_style::kSubGroupIndent);
+    meter_row("Left:",  std::clamp(snap.volume_left  * vol_amp, 0.0f, 1.0f), fill);
+    meter_row("Right:", std::clamp(snap.volume_right * vol_amp, 0.0f, 1.0f), fill);
+    center_meter_row("Pan:", snap.audio_pan);
+    ImGui::Unindent(overlay_style::kSubGroupIndent);
+
+    info_row("Format:", "%s (%.0f ch)", format_label(static_cast<int>(snap.audio_format)),
+             snap.audio_format);
+
+    if (settings_subtree("levels")) {
+        ImGui::Indent(overlay_style::kSubGroupIndent);
+        if (slider_row("Volume Boost", &cfg.frequency.amplifier_volume, 1.0f, 11.0f, "%.2f",
+            "Visual-only multiplier on the volume uniforms (does not affect analysis)."))
+            dirty = true;
+        if (slider_row("Pan Smoothing", &cfg.audio.pan_smoothing, 0.0f, 1.0f, "%.2f",
+            "Reduces pan jitter. 0 = no smoothing."))                         dirty = true;
+        if (slider_row("Pan Offset", &cfg.audio.pan_offset, -1.0f, 1.0f, "%.2f",
+            "User pan bias (-1 = full left, +1 = full right)."))             dirty = true;
+        ImGui::Unindent(overlay_style::kSubGroupIndent);
     }
-    ImGui::Dummy(ImVec2(bar_width, kBarHeightSubMeter));
-    ImGui::Dummy(ImVec2(0, kBarSpacingLarge));
+}
 
-    // Pan bar (center-anchored).
-    label_then("Pan:");
-    center_bar(snap.audio_pan, bar_width, kBarHeightThin);
-    ImGui::SameLine();
-    ImGui::Text("%+0.2f", snap.audio_pan);
+// ---------------- Section: Beat Detection (visual + settings) -----------
 
-    // Volume amp slider (visual-only).
-    label_then("Vol Boost:");
-    ImGui::PushItemWidth(bar_width);
-    if (ImGui::SliderFloat("##VolAmp", &cfg.frequency.amplifier_volume,
-                            1.0f, 11.0f, "%.2f")) dirty = true;
-    ImGui::PopItemWidth();
-    tip("Visual-only multiplier on the volume uniforms (does not affect analysis).");
+static void section_beat(const AudioSnapshot& snap, config::Settings& cfg, bool& dirty) {
+    using namespace overlay_style;
+    section_title("Beat Detection");
 
-    label_then("Pan Smooth:");
-    ImGui::PushItemWidth(bar_width);
-    if (ImGui::SliderFloat("##PanSmooth", &cfg.audio.pan_smoothing,
-                            0.0f, 1.0f, "%.2f")) dirty = true;
-    ImGui::PopItemWidth();
-    tip("Reduces pan jitter. 0 = no smoothing.");
+    const ImU32 fill = ImGui::GetColorU32(ImGuiCol_PlotHistogram);
 
-    label_then("Pan Offset:");
-    ImGui::PushItemWidth(bar_width);
-    if (ImGui::SliderFloat("##PanOff", &cfg.audio.pan_offset,
-                            -1.0f, 1.0f, "%.2f")) dirty = true;
-    ImGui::PopItemWidth();
-    tip("User pan bias (-1..+1).");
-
-    ImGui::Dummy(ImVec2(0, kBarSpacingLarge));
-
-    // Beat row.
-    label_then("Beat:");
-    ImGui::ProgressBar(std::clamp(snap.beat, 0.0f, 1.0f),
-                       ImVec2(bar_width, 0.0f));
-    ImGui::SameLine();
-    ImGui::Text("%.2f", snap.beat);
-
-    label_then("Beat Phase:");
-    ImGui::ProgressBar(std::clamp(snap.beat_phase, 0.0f, 1.0f),
-                       ImVec2(bar_width, 0.0f));
-    ImGui::SameLine();
-    ImGui::Text("%.2f", snap.beat_phase);
-
-    label_then("Tempo:");
+    meter_row("Beat:",       std::clamp(snap.beat,       0.0f, 1.0f), fill, "%.2f");
+    meter_row("Beat Phase:", std::clamp(snap.beat_phase, 0.0f, 1.0f), fill, "%.2f");
     if (snap.tempo_detected) {
-        ImGui::Text("%.1f BPM (%.0f%% confidence)",
-                    snap.tempo_bpm, snap.tempo_confidence * 100.0f);
+        info_row("Tempo:", "%.1f BPM (%.0f%% confidence)",
+                 snap.tempo_bpm, snap.tempo_confidence * 100.0f);
     } else {
-        ImGui::TextDisabled("unlocked (%.1f BPM, %.0f%%)",
+        label_left("Tempo:");
+        ImGui::TextDisabled("unlocked  (%.1f BPM, %.0f%%)",
                             snap.tempo_bpm, snap.tempo_confidence * 100.0f);
     }
 
-    label_then("Loudness:");
-    ImGui::ProgressBar(std::clamp(snap.loudness, 0.0f, 1.0f),
-                       ImVec2(bar_width, 0.0f));
-    ImGui::SameLine();
-    ImGui::Text("%.2f", snap.loudness);
-    tip("K-weighted (BS.1770) momentary loudness over a 400 ms window.");
-
-    label_then("Format:");
-    ImGui::Text("%s (%.0f ch)", format_label(static_cast<int>(snap.audio_format)),
-                snap.audio_format);
+    if (settings_subtree("beat")) {
+        ImGui::Indent(kSubGroupIndent);
+        if (slider_row("Threshold lambda", &cfg.beat.threshold_lambda, 0.0f, 1.0f, "%.3f",
+            "Aubio-formula \xCE\xBB in `median + \xCE\xBB\xC2\xB7mean` adaptive threshold.")) dirty = true;
+        if (slider_row("Threshold window (ms)", &cfg.beat.threshold_window_ms, 10.0f, 1000.0f, "%.0f",
+            "Sliding window for adaptive threshold computation.")) dirty = true;
+        if (slider_row("Refractory (ms)", &cfg.beat.refractory_ms, 5.0f, 500.0f, "%.0f",
+            "Minimum interval between detected onsets (suppresses doubles).")) dirty = true;
+        if (slider_row("Phase k_p", &cfg.beat.phase_kp, 0.0f, 1.0f, "%.3f",
+            "PLL phase-pull strength on confident detected onsets.")) dirty = true;
+        if (slider_row("Phase k_i", &cfg.beat.phase_ki, 0.0f, 0.5f, "%.4f",
+            "PLL BPM-drift correction strength.")) dirty = true;
+        if (slider_row("Tempo prior BPM", &cfg.beat.tempo_prior_bpm, 60.0f, 200.0f, "%.0f",
+            "Center of the log-Gaussian tempo prior (mitigates octave errors).")) dirty = true;
+        if (slider_row("Tempo prior \xCF\x83 (oct)", &cfg.beat.tempo_prior_sigma, 0.1f, 2.0f, "%.2f",
+            "Width of the tempo prior in octaves.")) dirty = true;
+        if (slider_row("Tempo window (s)", &cfg.beat.tempo_window_sec, 1.0f, 30.0f, "%.1f",
+            "Autocorrelation history length.")) dirty = true;
+        if (slider_row("Beat decay /s", &cfg.beat.beat_decay_per_sec, 0.1f, 10.0f, "%.2f",
+            "Decay rate for the `beat` uniform after a detected onset.")) dirty = true;
+        ImGui::Unindent(kSubGroupIndent);
+    }
 }
 
-static void draw_frequency(const AudioSnapshot& snap, config::Settings& cfg, bool& dirty) {
+// ---------------- Section: Frequency Bands -------------------------------
+
+static void section_frequency(const AudioSnapshot& snap, config::Settings& cfg, bool& dirty) {
     using namespace overlay_style;
+    section_title("Frequency Bands");
+
     const uint32_t n = std::min<uint32_t>(snap.freq_band_count, 64);
     const float bands_amp = cfg.frequency.amplifier_bands;
+    info_row("Count:", "%u bands  (post-EQ, post-LogBoost)", n);
 
-    ImGui::Text("Frequency Bands  (%u)", n);
     ImGui::BeginChild("##bands_compact",
                       ImVec2(0.0f, kBarHeightThin * static_cast<float>(n) + 12.0f),
                       true, ImGuiWindowFlags_NoScrollbar);
@@ -321,63 +407,63 @@ static void draw_frequency(const AudioSnapshot& snap, config::Settings& cfg, boo
                       bands_amp, ImGui::GetContentRegionAvail().x);
     ImGui::EndChild();
 
-    ImGui::AlignTextToFramePadding();
-    ImGui::Text("Bands Boost:");
-    ImGui::SameLine();
-    ImGui::PushItemWidth(-1);
-    if (ImGui::SliderFloat("##BandAmp", &cfg.frequency.amplifier_bands,
-                            1.0f, 11.0f, "%.2f")) dirty = true;
-    ImGui::PopItemWidth();
-    tip("Visual-only multiplier on the bands uniforms.");
+    if (settings_subtree("frequency")) {
+        ImGui::Indent(kSubGroupIndent);
+        if (slider_row("Bands Boost", &cfg.frequency.amplifier_bands, 1.0f, 11.0f, "%.2f",
+            "Visual-only multiplier on the bands uniforms.")) dirty = true;
 
-    if (ImGui::TreeNode("Band mapping")) {
+        subgroup_label("Band mapping:");
+        ImGui::Indent(kSubGroupIndent);
         const char* const scales[] = {"Linear", "Log", "Mel (Slaney)"};
         int scale = static_cast<int>(cfg.frequency.band_scale);
-        ImGui::PushItemWidth(-1);
-        if (ImGui::Combo("##scale", &scale, scales, 3)) {
-            cfg.frequency.band_scale = static_cast<config::FrequencyConfig::BandScale>(scale);
+        if (combo_row("Band scale", &scale, scales, 3,
+            "Mel matches perception best; Log was the v1 default; Linear is legacy.")) {
+            cfg.frequency.band_scale =
+                static_cast<config::FrequencyConfig::BandScale>(scale);
             dirty = true;
         }
-        ImGui::PopItemWidth();
-        tip("Mel matches perception best; Log was the v1 default; Linear is legacy.");
+        if (slider_int_row("Band count", &cfg.frequency.band_count, 8, 128,
+            "Live band count published. Cap is kMaxBands.")) dirty = true;
+        if (slider_int_row("FFT size", &cfg.frequency.fft_size, 256, 8192,
+            "Power-of-two recommended. Larger = finer resolution, more CPU.")) dirty = true;
+        if (slider_row("Min freq", &cfg.frequency.min_freq, 10.0f, 500.0f, "%.0f",
+            "Lowest band edge in Hz.")) dirty = true;
+        if (slider_row("Max freq", &cfg.frequency.max_freq, 2000.0f, 22050.0f, "%.0f",
+            "Highest band edge in Hz.")) dirty = true;
+        if (slider_row("Log strength", &cfg.frequency.log_strength, 0.01f, 1.5f, "%.2f",
+            "Gain curve over band index when log scale enabled.")) dirty = true;
+        if (slider_row("Band norm", &cfg.frequency.band_norm, 0.001f, 1.0f, "%.3f",
+            "Raw-magnitude → band-amplitude scaling.")) dirty = true;
+        ImGui::Unindent(kSubGroupIndent);
 
-        if (slider_i("Band count", &cfg.frequency.band_count, 8, 128,
-                      "Live band count published. Cap is kMaxBands.")) dirty = true;
-        if (slider_i("FFT size", &cfg.frequency.fft_size, 256, 8192,
-                      "Power-of-two recommended. Larger = finer resolution, more CPU.")) dirty = true;
-        if (slider_f("Min freq", &cfg.frequency.min_freq, 10.0f, 500.0f, "%.0f",
-                      "Lowest band edge in Hz.")) dirty = true;
-        if (slider_f("Max freq", &cfg.frequency.max_freq, 2000.0f, 22050.0f, "%.0f",
-                      "Highest band edge in Hz.")) dirty = true;
-        if (slider_f("Log strength", &cfg.frequency.log_strength, 0.01f, 1.5f, "%.2f",
-                      "Gain curve over band index when log scale enabled.")) dirty = true;
-        if (slider_f("Band norm", &cfg.frequency.band_norm, 0.001f, 1.0f, "%.3f",
-                      "Raw-magnitude → band-amplitude scaling.")) dirty = true;
-        ImGui::TreePop();
-    }
-    if (ImGui::TreeNode("Equalizer (5-band, Gaussian)")) {
-        const char* const names[5] = {"Low (Bass)", "Low-Mid", "Mid", "Mid-High", "High (Treble)"};
+        subgroup_label("Equalizer (5-band, Gaussian):");
+        ImGui::Indent(kSubGroupIndent);
+        const char* const eq_names[5] = {"Low (Bass)", "Low-Mid", "Mid", "Mid-High", "High (Treble)"};
         for (int i = 0; i < 5; ++i) {
-            char id[16]; std::snprintf(id, sizeof(id), "##eq%d", i);
-            if (ImGui::SliderFloat(id, &cfg.frequency.equalizer_bands[i],
-                                    0.0f, 4.0f, "%.2f")) dirty = true;
-            ImGui::SameLine(); ImGui::Text("%s", names[i]);
+            char buf[24]; std::snprintf(buf, sizeof(buf), "%s", eq_names[i]);
+            if (slider_row(buf, &cfg.frequency.equalizer_bands[i], 0.0f, 4.0f, "%.2f"))
+                dirty = true;
         }
-        if (slider_f("Width", &cfg.frequency.equalizer_width, 0.05f, 0.5f, "%.2f",
-                      "Gaussian σ for each EQ knob's influence.")) dirty = true;
-        ImGui::TreePop();
+        if (slider_row("Width", &cfg.frequency.equalizer_width, 0.05f, 0.5f, "%.2f",
+            "Gaussian σ for each EQ knob's influence.")) dirty = true;
+        ImGui::Unindent(kSubGroupIndent);
+
+        ImGui::Unindent(kSubGroupIndent);
     }
 }
 
-static void draw_directional(const AudioSnapshot& snap, config::Settings& cfg, bool& dirty) {
+// ---------------- Section: Directional Intensity --------------------------
+
+static void section_directional(const AudioSnapshot& snap, config::Settings& cfg, bool& dirty) {
     using namespace overlay_style;
-    // Rose + 8 thin bars side-by-side. Rose is in v1, but a thin-bar list
-    // with labels reads better at compact sizes — provide both.
+    section_title("Directional Intensity");
+
     const float dir_amp = cfg.frequency.amplifier_direction;
     const char* const labels[8] = { "F", "FR", "R", "BR", "B", "BL", "L", "FL" };
+    const ImU32 fill = ImGui::GetColorU32(ImGuiCol_PlotHistogram);
 
-    // Rose visualization (compact).
-    const float side = std::min(140.0f, ImGui::GetContentRegionAvail().x * 0.5f);
+    // Rose visualization (compact, on the left).
+    const float side = std::min(140.0f, ImGui::GetContentRegionAvail().x * 0.4f);
     const ImVec2 origin = ImGui::GetCursorScreenPos();
     const ImVec2 center(origin.x + side * 0.5f, origin.y + side * 0.5f);
     const float radius = side * 0.5f;
@@ -392,156 +478,154 @@ static void draw_directional(const AudioSnapshot& snap, config::Settings& cfg, b
         const float r  = radius * v;
         const ImVec2 p0(center.x + r * cosf(a0), center.y + r * sinf(a0));
         const ImVec2 p1(center.x + r * cosf(a1), center.y + r * sinf(a1));
-        dl->AddTriangleFilled(center, p0, p1,
-            ImGui::GetColorU32(ImGuiCol_PlotHistogram));
+        dl->AddTriangleFilled(center, p0, p1, fill);
     }
     ImGui::Dummy(ImVec2(side, side));
 
-    // Thin bars list with labels (compact alternative).
+    // Per-direction thin bars on the right of the rose.
     ImGui::SameLine();
     ImGui::BeginGroup();
-    const float bar_w = ImGui::GetContentRegionAvail().x;
     for (int i = 0; i < 8; ++i) {
-        ImGui::Text("%-3s", labels[i]);
-        ImGui::SameLine(28.0f);
-        thin_meter(std::clamp(snap.direction8[i] * dir_amp, 0.0f, 1.0f),
-                    bar_w - 28.0f, kBarHeightThin, ImGui::GetColorU32(ImGuiCol_PlotHistogram));
+        char buf[8]; std::snprintf(buf, sizeof(buf), "%s:", labels[i]);
+        meter_row(buf, std::clamp(snap.direction8[i] * dir_amp, 0.0f, 1.0f), fill, "%.2f");
     }
     ImGui::EndGroup();
 
-    if (ImGui::SliderFloat("Direction Boost",
-                            &cfg.frequency.amplifier_direction,
-                            1.0f, 11.0f, "%.2f")) dirty = true;
-    tip("Visual-only multiplier on the directional uniforms.");
+    if (settings_subtree("directional")) {
+        ImGui::Indent(kSubGroupIndent);
+        if (slider_row("Direction Boost", &cfg.frequency.amplifier_direction,
+                        1.0f, 11.0f, "%.2f",
+            "Visual-only multiplier on the directional uniforms.")) dirty = true;
+        ImGui::Unindent(kSubGroupIndent);
+    }
 }
 
-static void draw_chronotensity_and_phases(const AudioSnapshot& snap,
-                                          config::Settings& cfg, bool& dirty) {
+// ---------------- Section: Chronotensity / AGC / Loudness ---------------
+
+static void section_chronotensity(const AudioSnapshot& snap, config::Settings& cfg, bool& dirty) {
     using namespace overlay_style;
-    const float w = ImGui::GetContentRegionAvail().x;
-    auto* dl = ImGui::GetWindowDrawList();
-    auto phase_bar = [&](const char* label, float v) {
-        ImGui::AlignTextToFramePadding();
-        ImGui::Text("%-14s", label);
-        ImGui::SameLine();
-        const ImVec2 p = ImGui::GetCursorScreenPos();
-        const float bar_w = w - ImGui::GetCursorPosX() + ImGui::GetStyle().WindowPadding.x;
-        const ImVec2 max_pt(p.x + bar_w, p.y + kBarHeightThin);
-        dl->AddRectFilled(p, max_pt, kColorBg, kBarRounding);
-        const ImU32 fill = ImGui::GetColorU32(ImGuiCol_PlotHistogram);
-        dl->AddRectFilled(p, ImVec2(p.x + std::clamp(v, 0.0f, 1.0f) * bar_w, p.y + kBarHeightThin),
-                          fill, kBarRounding);
-        dl->AddRect(p, max_pt, kColorOutline, kBarRounding);
-        ImGui::Dummy(ImVec2(bar_w, kBarHeightThin));
+    section_title("Phases, AGC & Loudness");
+
+    const ImU32 fill = ImGui::GetColorU32(ImGuiCol_PlotHistogram);
+
+    subgroup_label("Phases (chronotensity):");
+    ImGui::Indent(kSubGroupIndent);
+    meter_row("Volume:", snap.phase_volume, fill);
+    meter_row("Bass:",   snap.phase_bass,   fill);
+    meter_row("Treble:", snap.phase_treble, fill);
+    ImGui::Unindent(kSubGroupIndent);
+
+    subgroup_label("AGC norm  (1.0 = recent average loudness):");
+    ImGui::Indent(kSubGroupIndent);
+    // AGC ratios live in [0, ~clamp_max]; show as 0..1 with /clamp_max scaling.
+    const float scale = 1.0f / std::max(0.1f, cfg.agc.clamp_max);
+    auto agc_row = [&](const char* lbl, float v) {
+        meter_row(lbl, std::clamp(v * scale, 0.0f, 1.0f), fill, nullptr);
         ImGui::SameLine();
         ImGui::Text("%.2f", v);
     };
-    phase_bar("phase_volume", snap.phase_volume);
-    phase_bar("phase_bass",   snap.phase_bass);
-    phase_bar("phase_treble", snap.phase_treble);
+    agc_row("Volume:", snap.volume_norm);
+    agc_row("Bass:",   snap.bass_norm);
+    agc_row("Mid:",    snap.mid_norm);
+    agc_row("Treble:", snap.treb_norm);
+    ImGui::Unindent(kSubGroupIndent);
 
-    ImGui::Text("AGC norm (1.0 = average loudness)");
-    phase_bar("volume_norm",  std::min(snap.volume_norm * 0.25f, 1.0f));
-    phase_bar("bass_norm",    std::min(snap.bass_norm   * 0.25f, 1.0f));
-    phase_bar("mid_norm",     std::min(snap.mid_norm    * 0.25f, 1.0f));
-    phase_bar("treb_norm",    std::min(snap.treb_norm   * 0.25f, 1.0f));
+    subgroup_label("Other:");
+    ImGui::Indent(kSubGroupIndent);
+    meter_row("Spectral Centroid:", snap.spectral_centroid, fill, "%.3f");
+    meter_row("Loudness (BS.1770):",
+              std::clamp(snap.loudness, 0.0f, 1.0f), fill, "%.2f");
+    ImGui::Unindent(kSubGroupIndent);
 
-    ImGui::Text("Spectral centroid: %.3f", snap.spectral_centroid);
+    if (settings_subtree("phases_agc")) {
+        ImGui::Indent(kSubGroupIndent);
 
-    if (ImGui::TreeNode("Chronotensity gains")) {
-        if (slider_f("Volume gain", &cfg.chronotensity.gain_volume, 0.0f, 5.0f, "%.2f",
-                      "How much volume_norm modulates phase_volume's rate.")) dirty = true;
-        if (slider_f("Bass gain", &cfg.chronotensity.gain_bass, 0.0f, 5.0f, "%.2f",
-                      "Modulates phase_bass.")) dirty = true;
-        if (slider_f("Treble gain", &cfg.chronotensity.gain_treble, 0.0f, 5.0f, "%.2f",
-                      "Modulates phase_treble.")) dirty = true;
-        ImGui::TreePop();
-    }
+        subgroup_label("Chronotensity gains:");
+        ImGui::Indent(kSubGroupIndent);
+        if (slider_row("Volume gain", &cfg.chronotensity.gain_volume, 0.0f, 5.0f, "%.2f",
+            "How much volume_norm modulates phase_volume's rate.")) dirty = true;
+        if (slider_row("Bass gain", &cfg.chronotensity.gain_bass, 0.0f, 5.0f, "%.2f",
+            "Modulates phase_bass.")) dirty = true;
+        if (slider_row("Treble gain", &cfg.chronotensity.gain_treble, 0.0f, 5.0f, "%.2f",
+            "Modulates phase_treble.")) dirty = true;
+        ImGui::Unindent(kSubGroupIndent);
 
-    if (ImGui::TreeNode("AGC settings")) {
-        if (slider_f("Window (s)", &cfg.agc.window_seconds, 0.5f, 30.0f, "%.1f",
-                      "Running-mean window for AGC normalization.")) dirty = true;
-        if (slider_f("Clamp max",  &cfg.agc.clamp_max,      1.5f, 8.0f,  "%.1f",
-                      "Upper bound on the normalized ratio.")) dirty = true;
-        if (slider_f("Attack (ms)", &cfg.agc.att_attack_ms,  1.0f, 1000.0f, "%.0f",
-                      "Smoothing attack for *_att uniforms.")) dirty = true;
-        if (slider_f("Release (ms)", &cfg.agc.att_release_ms, 1.0f, 5000.0f, "%.0f",
-                      "Smoothing release for *_att uniforms.")) dirty = true;
-        ImGui::TreePop();
-    }
+        subgroup_label("AGC:");
+        ImGui::Indent(kSubGroupIndent);
+        if (slider_row("Window (s)", &cfg.agc.window_seconds, 0.5f, 30.0f, "%.1f",
+            "Running-mean window for AGC normalization.")) dirty = true;
+        if (slider_row("Clamp max", &cfg.agc.clamp_max, 1.5f, 8.0f, "%.1f",
+            "Upper bound on the normalized ratio.")) dirty = true;
+        if (slider_row("Attack (ms)", &cfg.agc.att_attack_ms, 1.0f, 1000.0f, "%.0f",
+            "Smoothing attack for *_att uniforms.")) dirty = true;
+        if (slider_row("Release (ms)", &cfg.agc.att_release_ms, 1.0f, 5000.0f, "%.0f",
+            "Smoothing release for *_att uniforms.")) dirty = true;
+        ImGui::Unindent(kSubGroupIndent);
 
-    if (ImGui::TreeNode("Loudness")) {
-        if (slider_f("Window (ms)", &cfg.loudness.window_ms, 50.0f, 3000.0f, "%.0f",
-                      "K-weighted RMS window. 400 ms = BS.1770 'momentary'.")) dirty = true;
-        ImGui::TreePop();
+        subgroup_label("Loudness:");
+        ImGui::Indent(kSubGroupIndent);
+        if (slider_row("Window (ms)", &cfg.loudness.window_ms, 50.0f, 3000.0f, "%.0f",
+            "K-weighted RMS window. 400 ms = BS.1770 'momentary'.")) dirty = true;
+        ImGui::Unindent(kSubGroupIndent);
+
+        ImGui::Unindent(kSubGroupIndent);
     }
 }
 
-static void draw_beat_settings(config::Settings& cfg, bool& dirty) {
-    if (slider_f("Threshold lambda", &cfg.beat.threshold_lambda, 0.0f, 1.0f, "%.3f",
-                  "Aubio-formula λ in `median + λ·mean` adaptive threshold.")) dirty = true;
-    if (slider_f("Threshold window (ms)", &cfg.beat.threshold_window_ms, 10.0f, 1000.0f, "%.0f",
-                  "Sliding window for adaptive threshold computation.")) dirty = true;
-    if (slider_f("Refractory (ms)", &cfg.beat.refractory_ms, 5.0f, 500.0f, "%.0f",
-                  "Minimum interval between detected onsets (suppresses doubles).")) dirty = true;
-    if (slider_f("Phase k_p", &cfg.beat.phase_kp, 0.0f, 1.0f, "%.3f",
-                  "PLL phase-pull strength on confident detected onsets.")) dirty = true;
-    if (slider_f("Phase k_i", &cfg.beat.phase_ki, 0.0f, 0.5f, "%.4f",
-                  "PLL BPM-drift correction strength.")) dirty = true;
-    if (slider_f("Tempo prior BPM", &cfg.beat.tempo_prior_bpm, 60.0f, 200.0f, "%.0f",
-                  "Center of the log-Gaussian tempo prior (mitigates octave errors).")) dirty = true;
-    if (slider_f("Tempo prior σ (oct)", &cfg.beat.tempo_prior_sigma, 0.1f, 2.0f, "%.2f",
-                  "Width of the tempo prior in octaves.")) dirty = true;
-    if (slider_f("Tempo window (s)", &cfg.beat.tempo_window_sec, 1.0f, 30.0f, "%.1f",
-                  "Autocorrelation history length.")) dirty = true;
-    if (slider_f("Beat decay /s", &cfg.beat.beat_decay_per_sec, 0.1f, 10.0f, "%.2f",
-                  "Decay rate for the `beat` uniform after a detected onset.")) dirty = true;
-}
+// ---------------- Section: DSP profiler ----------------------------------
 
-static void draw_profiler(const AudioSnapshot& snap) {
+static void section_profiler(const AudioSnapshot& snap) {
     using namespace overlay_style;
-    ImGui::Text("Pipeline: %.1f µs total (EMA)", snap.pipeline_micros);
+    section_title("DSP Profiler");
+
+    info_row("Pipeline:", "%.1f \xC2\xB5s total (EMA)", snap.pipeline_micros);
 
     if (snap.stage_count == 0) {
         ImGui::TextDisabled("(no timings yet)");
         return;
     }
-    // Find the worst-case µs across stages so the bars are scaled to it.
     float max_micros = 1.0f;
     for (uint32_t i = 0; i < snap.stage_count; ++i) {
         max_micros = std::max(max_micros, snap.stage_timings[i].micros);
     }
-
-    const float name_w = 130.0f;
-    const float val_w  = 60.0f;
-    const float bar_w  = std::max(40.0f, ImGui::GetContentRegionAvail().x - name_w - val_w - 12.0f);
-
+    char buf[32];
     for (uint32_t i = 0; i < snap.stage_count; ++i) {
         const auto& t = snap.stage_timings[i];
-        ImGui::Text("%-22s", t.name);
-        ImGui::SameLine(name_w);
-        thin_meter(t.micros / max_micros, bar_w, kBarHeightThin, kColorProfiler);
+        std::snprintf(buf, sizeof(buf), "%s:", t.name);
+        // Use meter_row but with profiler color and µs value formatting.
+        label_left(buf);
+        const float frame_h = ImGui::GetFrameHeight();
+        const float spacing = ImGui::GetStyle().ItemSpacing.x;
+        const float val_w = g_value_col_w;
+        const float bar_w = std::max(8.0f, ImGui::GetContentRegionAvail().x - val_w - spacing);
+        auto* dl = ImGui::GetWindowDrawList();
+        const ImVec2 p = ImGui::GetCursorScreenPos();
+        const float y_off = (frame_h - kBarHeightThin) * 0.5f;
+        const ImVec2 bg_tl(p.x, p.y + y_off);
+        const ImVec2 bg_br(p.x + bar_w, bg_tl.y + kBarHeightThin);
+        dl->AddRectFilled(bg_tl, bg_br, kColorBg, kBarRounding);
+        const float v = std::clamp(t.micros / max_micros, 0.0f, 1.0f);
+        if (v > 0.0f) {
+            dl->AddRectFilled(bg_tl, ImVec2(p.x + v * bar_w, bg_br.y),
+                              kColorProfiler, kBarRounding);
+        }
+        dl->AddRect(bg_tl, bg_br, kColorOutline, kBarRounding);
+        ImGui::Dummy(ImVec2(bar_w, frame_h));
         ImGui::SameLine();
-        ImGui::Text("%.1f µs", t.micros);
+        ImGui::Text("%.1f \xC2\xB5s", t.micros);
     }
 }
 
-static void draw_settings_management(config::Store& store, config::Settings& cfg,
-                                      AudioSystem& system, bool& dirty) {
-    if (dirty) {
-        // Live updates immediately so DSP threads pick up changes on next frame.
-        store.publish(cfg);
-        dirty = false;
-    }
+// ---------------- Section: Settings management ---------------------------
+
+static void section_settings_mgmt(config::Store& store, config::Settings& cfg,
+                                   AudioSystem& system) {
+    section_title("Settings Management");
 
     ImGui::Columns(3, "##settings_buttons", false);
-    if (ImGui::Button("Save to disk", ImVec2(-1, 0))) {
-        store.save();
-    }
+    if (ImGui::Button("Save to disk", ImVec2(-1, 0)))    store.save();
     ImGui::NextColumn();
-    if (ImGui::Button("Reload from disk", ImVec2(-1, 0))) {
-        store.load();
-    }
+    if (ImGui::Button("Reload from disk", ImVec2(-1, 0))) store.load();
     ImGui::NextColumn();
     if (ImGui::Button("Reset to defaults", ImVec2(-1, 0))) {
         store.publish(config::Settings{});
@@ -549,12 +633,12 @@ static void draw_settings_management(config::Store& store, config::Settings& cfg
     }
     ImGui::Columns(1);
 
-    ImGui::TextDisabled("Config file: %s", store.path().u8string().c_str());
     if (ImGui::Button("Restart audio pipeline", ImVec2(-1, 0))) {
-        const auto code = cfg.audio.capture_source_code;
-        system.switch_source(code);
+        system.switch_source(cfg.audio.capture_source_code);
     }
-    tip("Stop and restart the active source. Useful after changing FFT size or band count.");
+    tip("Stop and restart the active source (useful after FFT size or band count changes).");
+
+    ImGui::TextDisabled("Config file: %s", store.path().u8string().c_str());
 }
 
 // ---------------- Top-level entry ----------------------------------------
@@ -566,48 +650,17 @@ void draw_overlay(reshade::api::effect_runtime*,
     auto cfg = store.snapshot();
     bool dirty = false;
 
-    ImGui::SetNextItemOpen(true, ImGuiCond_FirstUseEver);
-    if (ImGui::CollapsingHeader("System & Source", ImGuiTreeNodeFlags_DefaultOpen)) {
-        draw_system_and_source(system, cfg, dirty);
-    }
-    ImGui::Separator();
+    compute_columns();
 
-    ImGui::SetNextItemOpen(true, ImGuiCond_FirstUseEver);
-    if (ImGui::CollapsingHeader("Levels & Beat", ImGuiTreeNodeFlags_DefaultOpen)) {
-        draw_levels_and_beat(snap, cfg, dirty);
-    }
-    ImGui::Separator();
+    section_system(system, cfg, dirty);
+    section_levels(snap, cfg, dirty);
+    section_beat(snap, cfg, dirty);
+    section_frequency(snap, cfg, dirty);
+    section_directional(snap, cfg, dirty);
+    section_chronotensity(snap, cfg, dirty);
+    section_profiler(snap);
+    section_settings_mgmt(store, cfg, system);
 
-    ImGui::SetNextItemOpen(true, ImGuiCond_FirstUseEver);
-    if (ImGui::CollapsingHeader("Frequency Bands", ImGuiTreeNodeFlags_DefaultOpen)) {
-        draw_frequency(snap, cfg, dirty);
-    }
-    ImGui::Separator();
-
-    if (ImGui::CollapsingHeader("Directional Intensity")) {
-        draw_directional(snap, cfg, dirty);
-    }
-    ImGui::Separator();
-
-    if (ImGui::CollapsingHeader("Chronotensity / AGC / Loudness")) {
-        draw_chronotensity_and_phases(snap, cfg, dirty);
-    }
-    ImGui::Separator();
-
-    if (ImGui::CollapsingHeader("Beat detection settings")) {
-        draw_beat_settings(cfg, dirty);
-    }
-    ImGui::Separator();
-
-    if (ImGui::CollapsingHeader("DSP profiler")) {
-        draw_profiler(snap);
-    }
-    ImGui::Separator();
-
-    if (ImGui::CollapsingHeader("Settings management", ImGuiTreeNodeFlags_DefaultOpen)) {
-        draw_settings_management(store, cfg, system, dirty);
-    }
-    // Final flush in case dirty was set inside the management section.
     if (dirty) {
         store.publish(cfg);
     }
