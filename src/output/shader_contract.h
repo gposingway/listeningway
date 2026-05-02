@@ -67,9 +67,14 @@ inline constexpr std::string_view kPhaseBass      = "listeningway_phase_bass";
 inline constexpr std::string_view kPhaseTreble    = "listeningway_phase_treble";
 inline constexpr std::string_view kVolumeHistory  = "listeningway_volume_history";
 
-// 16-band × 64-frame history. Layout in the array: band-major,
-// time-ascending (frame 0 = oldest, frame 63 = most recent). Index
-// helper: `freqbands16_history[band * 64 + frame]`.
-inline constexpr std::string_view kFreqBands16History = "listeningway_freqbands16_history";
+// Native-band × 64-frame history. Layout: band-major, time-ascending
+// (frame 0 = oldest, frame 63 = most recent). Band axis matches
+// `listeningway_freqbands` / `listeningway_numbands` so a shader using
+// freqbands today can read the history with `freqbands_history[band *
+// 64 + frame]`. Shader array size is DEFAULT_NUM_BANDS * 64 (substituted
+// by build.bat into the .fxh template). At runtime only the first
+// `numbands * 64` entries are updated each render; the remaining tail
+// is whatever was last written.
+inline constexpr std::string_view kFreqBandsHistory = "listeningway_freqbands_history";
 
 }  // namespace lw::shader_contract

@@ -221,12 +221,15 @@ void AudioSystem::dsp_thread_main() {
         snap.volume_history = volume_history_;
         snap.volume_history_head = volume_history_head_;
 
-        // Update 16-band history ring (frame-major).
-        bands_history_[bands_history_head_] = snap.freq_bands_16;
+        // Per-band history ring (frame-major). Storage sized at kMaxBands
+        // so band_count changes don't reshape the ring. Inactive columns are
+        // left at the previous frame's value (or zero from default-init);
+        // the publisher writes only `band_count` columns to the uniform.
+        bands_history_[bands_history_head_] = snap.freq_bands;
         bands_history_head_ =
             (bands_history_head_ + 1) % AudioSnapshot::kBandsHistoryFrames;
-        snap.freq_bands16_history = bands_history_;
-        snap.freq_bands16_history_head = bands_history_head_;
+        snap.freq_bands_history = bands_history_;
+        snap.freq_bands_history_head = bands_history_head_;
 
         snapshot_.publish(snap);
 

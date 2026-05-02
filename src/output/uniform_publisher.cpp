@@ -28,15 +28,17 @@ void publish_uniforms(reshade::api::effect_runtime* runtime,
         hist_linear[i] = snap.volume_history[src];
     }
 
-    // 16-band history: ring of frame-major rows → flat band-major linear-time
+    // Per-band history: ring of frame-major rows → flat band-major linear-time
     // view: index `band * 64 + frame`, frame=0 oldest, frame=63 newest.
-    constexpr size_t kBHB = AudioSnapshot::kBandsHistoryBands;
+    // Snapshot stores up to kMaxBands columns; we write only the active
+    // prefix (`band_count` columns) to the shader uniform.
     constexpr size_t kBHF = AudioSnapshot::kBandsHistoryFrames;
-    std::array<float, kBHB * kBHF> bands_hist_linear{};
+    const size_t native_bands = std::min<size_t>(snap.freq_band_count, kMaxBands);
+    std::array<float, kMaxBands * kBHF> bands_hist_linear{};
     for (size_t f = 0; f < kBHF; ++f) {
-        const size_t src_frame = (snap.freq_bands16_history_head + 1 + f) % kBHF;
-        for (size_t b = 0; b < kBHB; ++b) {
-            bands_hist_linear[b * kBHF + f] = snap.freq_bands16_history[src_frame][b];
+        const size_t src_frame = (snap.freq_bands_history_head + 1 + f) % kBHF;
+        for (size_t b = 0; b < native_bands; ++b) {
+            bands_hist_linear[b * kBHF + f] = snap.freq_bands_history[src_frame][b];
         }
     }
 
@@ -102,8 +104,9 @@ void publish_uniforms(reshade::api::effect_runtime* runtime,
         else if (src == sc::kPhaseTreble)      write_f1(snap.phase_treble);
         else if (src == sc::kVolumeHistory)    write_f(hist_linear.data(),
                                                        kVolumeHistoryLength);
-        else if (src == sc::kFreqBands16History)
-            write_f(bands_hist_linear.data(), kBHB * kBHF);
+        else if (src == sc::kFreqBandsHistory)
+            write_f(bands_hist_linear.data(),
+                    static_cast<uint32_t>(native_bands * kBHF));
     });
 }
 

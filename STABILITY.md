@@ -84,7 +84,7 @@ documented range but the name will not change.
 | `listeningway_phase_bass` | `float` | [0, 1) | Chronotensity phase driven by `bass_norm`. | |
 | `listeningway_phase_treble` | `float` | [0, 1) | Chronotensity phase driven by `treb_norm`. | |
 | `listeningway_volume_history` | `float[64]` | [0, 1] each | Last 64 frames of `volume`, oldest at index 0. | Enables waterfall/trail effects without shader-side ring buffers. |
-| `listeningway_freqbands16_history` | `float[1024]` | [0, 1] each | Last 64 frames of the 16-band reduction. Layout: **band-major**, time-ascending. Index helper: `freqbands16_history[band * 64 + frame]`. `frame=0` is oldest, `frame=63` is newest. | Per-band waterfall / spectrogram material. The 16-band axis matches `listeningway_freqbands16`. |
+| `listeningway_freqbands_history` | `float[N*64]` where N = DEFAULT_NUM_BANDS | [0, 1] each | Last 64 frames of the post-EQ band amplitudes at native resolution. Layout: **band-major**, time-ascending. Index helper: `freqbands_history[band * 64 + frame]`. `frame=0` is oldest, `frame=63` is newest. Band axis matches `listeningway_freqbands` / `listeningway_numbands`. At runtime the addon writes `numbands * 64` entries; the remaining uniform tail is whatever was last written. | Per-band waterfall / spectrogram material. ~16 KB uniform read at the default 64 bands. Shaders that want fewer bins (e.g. 16) can average down in-shader. |
 
 ---
 

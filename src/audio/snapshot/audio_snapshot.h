@@ -77,15 +77,18 @@ struct AudioSnapshot {
     std::array<float, kVolumeHistoryLength> volume_history{};
     uint32_t volume_history_head = 0;  // index of the most-recent sample
 
-    // 16-band × 64-frame ring of post-EQ band amplitudes. Stored frame-major
-    // (one inner array per snapshotted frame). UniformPublisher unrolls into
-    // a flat band-major linear-time view (`band * 64 + frame`, frame=0 oldest)
-    // before writing to the shader uniform.
-    static constexpr size_t kBandsHistoryBands  = 16;
+    // Per-band history ring for waterfall / spectrogram-style shaders.
+    // Stored frame-major (one inner array per snapshotted frame); the
+    // UniformPublisher unrolls into a flat band-major linear-time view
+    // (`band * frames + frame`, frame=0 oldest) before writing the
+    // shader uniform. Storage is sized for the worst case (kMaxBands),
+    // but the publisher writes only the active prefix (`freq_band_count`
+    // columns) so shaders declare their uniform at the build-time
+    // DEFAULT_NUM_BANDS constant.
     static constexpr size_t kBandsHistoryFrames = kVolumeHistoryLength;  // 64
-    std::array<std::array<float, kBandsHistoryBands>, kBandsHistoryFrames>
-        freq_bands16_history{};
-    uint32_t freq_bands16_history_head = 0;
+    std::array<std::array<float, kMaxBands>, kBandsHistoryFrames>
+        freq_bands_history{};
+    uint32_t freq_bands_history_head = 0;
 
     // --- Profiling (per-stage EMA-smoothed wall-clock) ---
     dsp::StageTimings stage_timings{};

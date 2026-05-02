@@ -82,8 +82,8 @@ private:
     std::array<float, kVolumeHistoryLength> volume_history_{};
     uint32_t                                  volume_history_head_ = 0;
 
-    // 16-band history ring (frame-major).
-    std::array<std::array<float, AudioSnapshot::kBandsHistoryBands>,
+    // Per-band history ring (frame-major, full resolution up to kMaxBands).
+    std::array<std::array<float, kMaxBands>,
                AudioSnapshot::kBandsHistoryFrames> bands_history_{};
     uint32_t bands_history_head_ = 0;
 
