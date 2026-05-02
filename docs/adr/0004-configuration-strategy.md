@@ -1,4 +1,4 @@
-# ADR-0004: Configuration. Single Settings struct, declarative bounds, auto-marshalled JSON
+# ADR-0004: Configuration (single Settings struct, declarative bounds, auto-marshalled JSON)
 
 ## Status
 
@@ -8,9 +8,9 @@ Accepted, 2026-05-01
 
 v1 has the same setting declared in three places that drift from each other:
 
-1. **The default value**. Declared in `src/core/constants.h` as a `constexpr float DEFAULT_*`.
-2. **The validator clamp range**. Declared in `Configuration::Validate()` as a magic-number `std::clamp(field, lo, hi)` call.
-3. **The UI slider range**. Declared in `src/core/constants.h` as a `constexpr float OVERLAY_*_MIN/MAX`.
+1. The default value, declared in `src/core/constants.h` as a `constexpr float DEFAULT_*`.
+2. The validator clamp range, declared in `Configuration::Validate()` as a magic-number `std::clamp(field, lo, hi)` call.
+3. The UI slider range, declared in `src/core/constants.h` as a `constexpr float OVERLAY_*_MIN/MAX`.
 
 The recent `frequency.logStrength` bug was the canonical example: default `0.1`, validator range `[0.2, 3.0]`, UI slider range `[0.01, 1.5]`. Save the default, load the file, validator clamps `0.1` to `0.2`. Value lost. Three independent declarations, three opportunities to drift.
 
@@ -37,7 +37,7 @@ struct Setting {
 };
 ```
 
-(Specializations or extensions for non-numeric settings. E.g. `Setting<std::string>` for the source code, `Setting<bool>`. Follow the same pattern with appropriate validation.)
+Non-numeric settings (such as `Setting<std::string>` for the source code, or `Setting<bool>` flags) follow the same pattern with appropriate validation.
 
 ### Single `Settings` struct as the persisted shape
 
@@ -77,10 +77,12 @@ Each DSP stage caches its own `Settings` snapshot and the version counter it was
 
 ### Validation runs on load and on UI write
 
-`Setting<T>::clamp(candidate)` is called:
-1. After deserialization from JSON (load path).
-2. When the overlay writes a new value (UI path).
-3. Never on the read path. The DSP thread trusts that whatever's in the live `Settings` snapshot is already validated.
+`Setting<T>::clamp(candidate)` is called in two places:
+
+1. After deserialization from JSON (the load path).
+2. When the overlay writes a new value (the UI path).
+
+It is never called on the read path; the DSP thread trusts that whatever is in the live `Settings` snapshot is already validated.
 
 This eliminates the v1 drift class because a single `Setting<T>::clamp` call is the *only* validator anywhere; UI sliders read `Setting<T>::min`/`max` for their range; persistence reads `Setting<T>::default_value` for missing fields.
 
@@ -104,22 +106,22 @@ Sample rate is detected at capture time and lives on the `AnalysisFrame` (via `F
 
 ### Positive
 
-- **Drift class eliminated.** The v1 logStrength bug is structurally impossible: there is one `min`, one `max`, one `default_value` per setting.
-- **~150 LOC of marshalling deleted.** v1's hand-written `Save()` and `LoadFromJson()` collapse into the `nlohmann` macro line per struct.
-- **Adding a setting is one line in the struct + one entry in the marshalling macro + one `Setting<T>` declaration.** No ceremony.
-- **Hot reload without a hot-path mutex.** DSP stages cache their settings snapshot; an atomic version compare gates the refetch.
-- **UI auto-generation possible.** Future improvement: walk the `Settings` struct via reflection (or a manual table) to render an overlay panel automatically. Out of scope for v1 but the design supports it.
-- **Validation is centralized and testable.** Unit tests pin `Setting<T>::clamp` behavior per field; round-trip property tests (load → validate → save → load → validate yields the same value) become trivial.
+- The drift class is eliminated. The v1 logStrength bug is structurally impossible because there is one `min`, one `max`, one `default_value` per setting.
+- About 150 LOC of marshalling code is deleted. v1's hand-written `Save()` and `LoadFromJson()` collapse into one `nlohmann` macro line per struct.
+- Adding a setting is one line in the struct, one entry in the marshalling macro, and one `Setting<T>` declaration. No ceremony.
+- Hot reload without a hot-path mutex. DSP stages cache their settings snapshot; an atomic version compare gates the refetch.
+- UI auto-generation is possible later. We could walk the `Settings` struct via reflection (or a manual table) to render an overlay panel automatically. Out of scope for v1, but the design supports it.
+- Validation is centralized and testable. Unit tests pin `Setting<T>::clamp` behaviour per field; round-trip property tests (load → validate → save → load → validate yields the same value) become trivial.
 
 ### Negative
 
-- **`Settings` struct is large.** Probably 30–50 fields across nested sub-structs. Acceptable; it reflects the genuine complexity of the configurable surface.
-- **`NLOHMANN_DEFINE_TYPE_INTRUSIVE_WITH_DEFAULT` requires the type to be default-constructible** (it is).
-- **No migration framework in v1** means existing v1 user configs are silently dropped. Beta acceptance covers this; documented in ADR-0001.
+- The `Settings` struct is large. Probably 30 to 50 fields across nested sub-structs. Acceptable; it reflects the genuine complexity of the configurable surface.
+- `NLOHMANN_DEFINE_TYPE_INTRUSIVE_WITH_DEFAULT` requires the type to be default-constructible. It is.
+- No migration framework in v1 means existing v1 user configs are silently dropped. Beta acceptance covers this; documented in ADR-0001.
 
 ### Neutral
 
-- **Schema version is permanent.** Once we ship `schema_version = 1`, all future schema changes go through migration code. This is the right discipline.
+- The schema version is permanent. Once we ship `schema_version = 1`, all future schema changes go through migration code. That's the right discipline.
 
 ## Alternatives considered
 
@@ -144,6 +146,6 @@ Sample rate is detected at capture time and lives on the `AnalysisFrame` (via `F
 ## References
 
 - v1 bug demonstrating the drift: `frequency.logStrength` reset on save+load (`src/configuration/Configuration.cpp` line 51 in commit 7cda8e8).
-- [research-notes.md §3](research-notes.md). JUCE `AudioProcessorValueTreeState` validates the "atomic snapshot read on hot path" pattern.
-- [research-notes.md §4](research-notes.md). Visualizer research that motivates additional settings.
-- ADR-0005. Uniform contract; configuration changes ripple to which uniforms are populated but uniform names themselves are stable.
+- [research-notes.md §3](research-notes.md): JUCE's `AudioProcessorValueTreeState` validates the "atomic snapshot read on hot path" pattern.
+- [research-notes.md §4](research-notes.md): visualizer research that motivates additional settings.
+- ADR-0005 (uniform contract): configuration changes ripple to which uniforms are populated, but uniform names themselves are stable.

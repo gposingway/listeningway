@@ -126,15 +126,16 @@ before flipping the main toggle.
 
 ### Positive
 
-- **Smallest credible vendoring footprint** for OSC: 2 files + LICENSE +
-  ATTRIBUTION. Easy to audit, easy to update, no portfile authoring.
-- **Address schema is discoverable**: anyone reading
+- The smallest plausible vendoring footprint for OSC: two files plus
+  LICENSE and ATTRIBUTION. Easy to audit, easy to update, no portfile
+  to author.
+- The address schema is discoverable. Anyone reading
   `shader_contract.h` knows the OSC tree without consulting a separate
   map.
-- **Send-only design has zero anti-cheat exposure** beyond what we
-  already have (no listening port, no DLL injection, no kernel calls).
-- **Ecosystem reach**: TouchDesigner, Resolume, vvvv, Max/MSP all
-  consume this with no extra plumbing on the user's side.
+- The send-only design has zero anti-cheat exposure beyond what we
+  already have. No listening port, no DLL injection, no kernel calls.
+- Ecosystem reach is broad. TouchDesigner, Resolume, vvvv, Max/MSP all
+  consume this stream with no extra plumbing on the user's side.
 
 ### Negative
 
@@ -145,10 +146,10 @@ before flipping the main toggle.
 - **Live `host` / `port` changes require toggle-off-then-on.** The
   alternative (rebind the socket on every settings version bump) trades
   reliability for ergonomics; we picked reliability.
-- **Vendored library warnings**: tinyosc trips a handful of `/W4`
+- **Vendored library warnings.** tinyosc trips a handful of `/W4`
   signed/unsigned mismatch warnings. We relax the level for that one
-  file (`COMPILE_OPTIONS /W3`) rather than patch upstream. Keeps
-  attribution clean.
+  file (`COMPILE_OPTIONS /W3`) rather than patch upstream, which keeps
+  the attribution clean.
 
 ### Neutral
 
@@ -198,8 +199,8 @@ distinct socket lifetime). UDP send-only is the right fit.
 
 ## References
 
-- ADR-0010. `IOutputConsumer` abstraction; vendoring policy; security
-  stance for toggleable network consumers.
-- [tinyosc on GitHub](https://github.com/mhroth/tinyosc)
-- OSC 1.0 specification (1997), [opensoundcontrol.org](http://opensoundcontrol.org/spec-1_0.html)
-- [`samples/osc_receiver.py`](../../samples/osc_receiver.py). Debug receiver.
+- ADR-0010 covers the `IOutputConsumer` abstraction, the vendoring
+  policy, and the security stance for toggleable network consumers.
+- [tinyosc on GitHub](https://github.com/mhroth/tinyosc).
+- OSC 1.0 specification (1997), [opensoundcontrol.org](http://opensoundcontrol.org/spec-1_0.html).
+- [`samples/osc_receiver.py`](../../samples/osc_receiver.py), the debug receiver.

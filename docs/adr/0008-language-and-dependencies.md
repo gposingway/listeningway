@@ -9,10 +9,11 @@ Accepted, 2026-05-01
 v1 targets C++17. v2 commits to a clean-room rebuild (ADR-0001), which is a natural moment to revisit language version, library dependencies, and the build/test toolchain. ADR-0001's beta-release scope removes any compatibility constraint on tooling. We can pick what's right for v2 now.
 
 The platform constraints are:
-- **Windows-only.** ReShade is Windows-focused; cross-platform doesn't pay.
-- **MSVC 2022.** ReShade SDK headers are MSVC-tested; switching compiler suite would multiply build complexity.
-- **vcpkg-managed third-party libraries** (already in use; manifest-mode).
-- **ReShade SDK v6.3.3** (existing pin in `prepare.bat`).
+
+- Windows only. ReShade is Windows-focused; cross-platform doesn't pay.
+- MSVC 2022. ReShade SDK headers are MSVC-tested; switching compiler suite would multiply build complexity.
+- vcpkg-managed third-party libraries (already in use, in manifest mode).
+- ReShade SDK v6.3.3 (existing pin in `prepare.bat`).
 
 ## Decision
 
@@ -103,7 +104,7 @@ src/
   config/                       # Setting<T>, Settings, Store
   output/                       # shader_contract.h, UniformPublisher
   overlay/                      # ImGui panels
-  third_party/                  # vendored single-header libs (readerwriterqueue.h, rapidcheck. If not via vcpkg)
+  third_party/                  # vendored single-header libs (readerwriterqueue.h, rapidcheck if not via vcpkg)
 tests/
   CMakeLists.txt
   generators.h
@@ -122,22 +123,22 @@ Per Phase 3 v1 work, the test executable opts into `/MT` to match `gtest` from t
 
 ### Positive
 
-- **Modern, readable code.** Concepts replace SFINAE; spans replace pointer+size; jthread replaces manual join discipline.
-- **Property tests via rapidcheck.** Header-only, BSD, integrates with gtest. Single dependency for the testing strategy in ADR-0006.
-- **moodycamel SPSC** is one of the most stress-tested lock-free queues in C++. Risk reduction vs hand-rolled.
-- **vcpkg manifest stays slim** (5 libraries). Each one earns its keep.
-- **One static-runtime triplet** for everything; consistent linkage.
+- The code reads more cleanly. Concepts replace SFINAE, spans replace pointer-and-size pairs, and jthread replaces manual join discipline.
+- Property tests via rapidcheck. Header-only, BSD-licensed, integrates with gtest. One dependency carries the testing strategy in ADR-0006.
+- moodycamel's SPSC queue is one of the most stress-tested lock-free queues in C++; using it is a risk reduction over a hand-rolled ring.
+- The vcpkg manifest stays slim at five libraries. Each one earns its keep.
+- A single static-runtime triplet for everything keeps linkage consistent.
 
 ### Negative
 
-- **C++20 raises the MSVC version floor.** MSVC 2022 17.x is widely available; existing developer setups likely already have it. Documented in `prepare.bat` if needed.
-- **Two new vcpkg dependencies** (`rapidcheck`, `readerwriterqueue`) for v2. Both are header-only, fast to build. Negligible CI impact.
-- **C++20 feature usage requires reviewer familiarity.** Concepts + jthread + stop_token are not yet universal C++ knowledge. Mitigation: PR reviewers walk through them; documentation comments where idiomatic style is non-obvious.
+- C++20 raises the MSVC version floor. MSVC 2022 17.x is widely available, and existing developer setups likely already have it. Documented in `prepare.bat` if needed.
+- Two new vcpkg dependencies (`rapidcheck`, `readerwriterqueue`) for v2. Both are header-only and fast to build, with negligible CI impact.
+- C++20 features need reviewer familiarity. Concepts, jthread, and stop_token are not yet universal C++ knowledge. PR reviewers walk through them, with documentation comments where idiomatic style is non-obvious.
 
 ### Neutral
 
-- **Build time**. C++20 compilation is slightly slower than C++17 due to concepts and modules-related machinery (even when modules aren't used). Negligible for a project this size.
-- **Static analysis**. Clang-tidy / cppcheck both support C++20 sufficiently for our needs.
+- Build time. C++20 compilation is slightly slower than C++17 due to concepts and modules-related machinery (even when modules aren't used). Negligible for a project this size.
+- Static analysis. Clang-tidy and cppcheck both support C++20 sufficiently for our needs.
 
 ## Alternatives considered
 
@@ -170,8 +171,8 @@ Per Phase 3 v1 work, the test executable opts into `/MT` to match `gtest` from t
 
 ## References
 
-- ADR-0001. Beta scope; toolchain choice freedom.
-- ADR-0002. Pipeline architecture; `moodycamel::ReaderWriterQueue` per [research-notes.md §6](research-notes.md).
-- ADR-0004. `nlohmann-json` intrusive marshalling.
-- ADR-0006. `gtest` + `rapidcheck` for testing.
-- ADR-0007. V1 scope; detection-technique implementation cites kissfft.
+- ADR-0001 sets the beta-release scope and toolchain freedom.
+- ADR-0002 (pipeline architecture) selects `moodycamel::ReaderWriterQueue` per [research-notes.md §6](research-notes.md).
+- ADR-0004 covers `nlohmann-json` intrusive marshalling.
+- ADR-0006 picks `gtest` and `rapidcheck` for testing.
+- ADR-0007 (v1 scope) cites kissfft in the detection-technique implementation.

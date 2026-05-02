@@ -1,4 +1,4 @@
-# ADR-0005: Shader uniform contract. Preserve names, expand additively
+# ADR-0005: Shader uniform contract (preserve names, expand additively)
 
 ## Status
 
@@ -6,11 +6,11 @@ Accepted, 2026-05-01
 
 ## Context
 
-Listeningway's shader uniform names are its public API. Every published shader that consumes Listeningway data depends on specific uniform source strings. `listeningway_volume`, `listeningway_freqbands`, `listeningway_beat`, etc. ReShade resolves these strings at effect load time; renaming any of them silently breaks every shader that referenced the old name.
+Listeningway's shader uniform names are its public API. Every published shader that consumes Listeningway data depends on specific uniform source strings (`listeningway_volume`, `listeningway_freqbands`, `listeningway_beat`, and so on). ReShade resolves these strings at effect load time; renaming any of them silently breaks every shader that referenced the old name.
 
-ADR-0001 commits the v2 engine to a beta release with broad permission to change behavior. The shader uniform contract is the **one stability frontier** that does not change: existing shaders must continue to work unmodified against v2.
+ADR-0001 commits the v2 engine to a beta release with broad permission to change behaviour. The shader uniform contract is the one stability frontier that does not change: existing shaders must continue to work unmodified against v2.
 
-The visualizer-design research ([research-notes.md](research-notes.md) §4) surfaced concrete additions that v2 should make to the contract. Additions that match what shader authors in adjacent ecosystems (MilkDrop, projectM, AudioLink, Wallpaper Engine) actually consume. v2 expands additively: every existing uniform stays at its existing name and semantic; new uniforms get new namespaced names.
+The visualizer-design research ([research-notes.md](research-notes.md) §4) surfaced concrete additions that v2 should make to the contract: additions that match what shader authors in adjacent ecosystems (MilkDrop, projectM, AudioLink, Wallpaper Engine) actually consume. v2 expands additively: every existing uniform stays at its existing name and semantic; new uniforms get new namespaced names.
 
 ## Decision
 
@@ -49,7 +49,7 @@ Numerical scaling is preserved. Values produced by v2 land in the same envelopes
 
 The visualizer research ([research-notes.md](research-notes.md) §4) identifies five high-value additions. All are new names; none rename or repurpose existing names.
 
-#### AGC-normalized variants (highest priority. Addresses the biggest v1 gap)
+#### AGC-normalized variants (highest priority; addresses the biggest v1 gap)
 
 | New uniform | Field type | Semantic |
 |---|---|---|
@@ -134,9 +134,9 @@ The `UniformPublisher` consumes these constants when writing into ReShade. Addin
 
 A `STABILITY.md` document in the repo root accompanies v2 release and classifies every uniform:
 
-- **Stable**. Guaranteed to remain at its current name, range, and semantic across v2 minor versions. All 22 preserved uniforms; the AGC `_norm` / `_att` siblings; the multiple-band-count uniforms; spectral centroid.
-- **Experimental**. Semantics may evolve during v2 beta, name is stable. `phase_*` chronotensity accumulators; `beat_phase`, `tempo_bpm`, `tempo_confidence`; `loudness`; `volume_history`.
-- **Removed in v2.0.0**. None.
+- **Stable**: guaranteed to remain at its current name, range, and semantic across v2 minor versions. Covers all 22 preserved uniforms, the AGC `_norm` and `_att` siblings, the multiple-band-count uniforms, and spectral centroid.
+- **Experimental**: semantics may evolve during the v2 beta, but the name is stable. Covers the `phase_*` chronotensity accumulators, `beat_phase`, `tempo_bpm`, `tempo_confidence`, `loudness`, and `volume_history`.
+- **Removed in v2.0.0**: none.
 
 Experimental uniforms move to Stable in a subsequent v2.x release once shader-author feedback validates their semantics.
 
@@ -144,21 +144,21 @@ Experimental uniforms move to Stable in a subsequent v2.x release once shader-au
 
 ### Positive
 
-- **Existing shaders work unchanged.** ADR-0001's beta-release permission applies to internal behavior, not to public API; this ADR holds the line on the public side.
-- **Clear extensibility path.** Adding new uniforms is a documented two-step (add to contract header + add publish step from snapshot field).
-- **Compile-time error if a uniform references a missing snapshot field.** Stringly-typed dispatch (the v1 pattern) becomes typed dispatch.
-- **Shader authors get materially more capability.** AGC-normalized values, history, multiple band counts, phase accumulators, perceptual loudness. All cheap to compute, all unlock effects that v1 forces shader authors to reinvent.
-- **STABILITY.md documents promises.** Future contributors know which names are sacred and which can evolve.
+- Existing shaders work unchanged. ADR-0001's beta-release permission applies to internal behaviour, not to the public API; this ADR holds the line on the public side.
+- Clear extensibility path. Adding a new uniform is a documented two-step process: add the constant to the contract header, add a publish step from the snapshot field.
+- Compile-time error if a uniform references a missing snapshot field. Stringly-typed dispatch (the v1 pattern) becomes typed dispatch.
+- Shader authors get materially more capability: AGC-normalized values, history, multiple band counts, phase accumulators, perceptual loudness. All cheap to compute, and all unlock effects that v1 forces shader authors to reinvent.
+- STABILITY.md documents the promises. Future contributors know which names are sacred and which can evolve.
 
 ### Negative
 
-- **`AudioSnapshot` grows.** Adding ~15 fields. Still tens of bytes, well within seqlock-friendly POD size.
-- **Per-frame uniform write count grows by ~50%.** Each uniform write is a `runtime->set_uniform_value_float` call. Already O(1) per uniform. Still negligible at typical frame rates.
-- **Some new uniforms may not be ideal in beta**. Chronotensity rate constants, AGC time windows. Beta period covers tuning; STABILITY.md flags them as Experimental.
+- `AudioSnapshot` grows. About 15 new fields, still tens of bytes, well within a seqlock-friendly POD size.
+- The per-frame uniform write count grows by around 50%. Each write is a `runtime->set_uniform_value_float` call, already O(1) per uniform, still negligible at typical frame rates.
+- Some new uniforms may not be tuned correctly in beta. Chronotensity rate constants and AGC time windows in particular. The beta period covers tuning, and STABILITY.md flags them as Experimental.
 
 ### Neutral
 
-- **The `extern "C" SwitchAudioProvider` DLL export** is reviewed separately. v2 may keep it as a thin wrapper for backwards compatibility with any external script callers; if no callers exist, it can be removed. Decided at v2 release time, not now.
+- The `extern "C" SwitchAudioProvider` DLL export is reviewed separately. v2 may keep it as a thin wrapper for backwards compatibility with any external script callers; if no callers exist, it can be removed. Decided at v2 release time, not now.
 
 ## Alternatives considered
 
@@ -166,10 +166,12 @@ Experimental uniforms move to Stable in a subsequent v2.x release once shader-au
 e.g. `listeningway.beat.value`, `listeningway.tempo.bpm`. **Rejected.** Breaks every existing shader. ReShade uniform sources are flat strings; there's no actual hierarchy. Cleaner-looking, not cleaner-functioning.
 
 ### Drop legacy direction-individual uniforms (`listeningway_front`, etc.) in favor of `direction8`
-**Rejected.** They exist; shaders consume them; removing breaks shaders. The publisher writes both. Cost is 8 extra `set_uniform_value_float` calls per frame. Trivial.
+
+Rejected. They exist, shaders consume them, removing breaks those shaders. The publisher writes both. The cost is eight extra `set_uniform_value_float` calls per frame, which is trivial.
 
 ### Expose every internal feature as a uniform
-**Rejected.** Per-band beats, spectral rolloff, spectral flatness, autocorrelation peaks. Each is computed but not exposed. Visualizer research showed shader-author demand is concentrated in a small set; over-exposure increases the surface to maintain without increasing the value to shaders.
+
+Rejected. Per-band beats, spectral rolloff, spectral flatness, and autocorrelation peaks are all computed internally but not exposed. The visualizer research showed shader-author demand is concentrated in a small set; over-exposure increases the surface to maintain without increasing the value to shader authors.
 
 ### Use ReShade buffer/SRV for high-bandwidth analysis
 e.g. expose the full FFT as a 1024-bin buffer instead of 64-band uniforms. **Deferred.** Designed-in but not implemented in v1. The snapshot type doesn't preclude it; we can add a buffer-publishing path in v1.5 if a shader author requests it.
@@ -179,8 +181,8 @@ e.g. expose the full FFT as a 1024-bin buffer instead of 64-band uniforms. **Def
 
 ## References
 
-- [research-notes.md §4](research-notes.md). Visualizer design research (MilkDrop, projectM, butterchurn, Wallpaper Engine, AudioLink).
-- [research-notes.md §5](research-notes.md). K-weighting / LUFS research informing the `loudness` uniform.
-- [research-notes.md §1](research-notes.md). MIR research informing tempo / beat phase uniforms.
-- ADR-0001. Beta-release scope; contract preservation is the one frontier that doesn't break.
-- ADR-0007. Implementation timing for new uniforms.
+- [research-notes.md §4](research-notes.md): visualizer-design research (MilkDrop, projectM, butterchurn, Wallpaper Engine, AudioLink).
+- [research-notes.md §5](research-notes.md): K-weighting and LUFS research informing the `loudness` uniform.
+- [research-notes.md §1](research-notes.md): MIR research informing the tempo and beat-phase uniforms.
+- ADR-0001 sets the beta-release scope; contract preservation is the one frontier that doesn't break.
+- ADR-0007 sets the implementation timing for new uniforms.

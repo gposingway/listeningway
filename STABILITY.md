@@ -78,9 +78,9 @@ documented range but the name will not change.
 |---|---|---|---|---|
 | `listeningway_loudness` | `float` | [0, 1] | K-weighted (BS.1770) momentary loudness over `loudness.window_ms` (default 400 ms), linear sqrt of mean-square. | Output is linear, *not* LUFS log. May add a separate `_lufs` log uniform if asked. |
 | `listeningway_beat_phase` | `float` | [0, 1) | PLL-locked beat phase. Continuously advances at the detected tempo when locked. | Falls back to 0 when tempo isn't locked. Use `tempo_confidence` to gate. |
-| `listeningway_tempo_bpm` | `float` | BPM | Detected tempo. 0 if undetected. | Estimator quality is genre-dependent; chronotensity phases are more robust. |
+| `listeningway_tempo_bpm` | `float` | BPM | Detected tempo. 0 if undetected. | Estimator quality is genre-dependent; chronotensity phases are more stable. |
 | `listeningway_tempo_confidence` | `float` | [0, 1] | Peak-to-second-peak ratio of tempo autocorrelation, EMA-smoothed. | `tempo_detected` becomes true above 0.4. |
-| `listeningway_phase_volume` | `float` | [0, 1) | Chronotensity phase: accumulates `1.0 + k·(volume_norm-1)` Hz mod 1.0. | Robust replacement for `beat_phase` when tempo isn't locked. |
+| `listeningway_phase_volume` | `float` | [0, 1) | Chronotensity phase: accumulates `1.0 + k·(volume_norm-1)` Hz mod 1.0. | Stable replacement for `beat_phase` when tempo isn't locked. |
 | `listeningway_phase_bass` | `float` | [0, 1) | Chronotensity phase driven by `bass_norm`. | |
 | `listeningway_phase_treble` | `float` | [0, 1) | Chronotensity phase driven by `treb_norm`. | |
 | `listeningway_volume_history` | `float[64]` | [0, 1] each | Last 64 frames of `volume`, oldest at index 0. | Enables waterfall/trail effects without shader-side ring buffers. |

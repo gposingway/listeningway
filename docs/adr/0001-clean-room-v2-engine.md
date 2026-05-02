@@ -18,9 +18,7 @@ A separate concern: about 30% of the v1 code carries genuine institutional knowl
 
 ## Decision
 
-**Rebuild Listeningway as a clean-room v2 engine** rather than continue refactoring v1 in place.
-
-Specifically:
+**Rebuild Listeningway as a clean-room v2 engine** rather than continue refactoring v1 in place:
 
 1. **`git mv src src.harvest`.** The v1 source tree is renamed and removed from the build. It remains in the repository as read-only reference material: searchable, not compiled.
 2. **`src/` is scaffolded fresh** against the architecture captured in ADR-0002 through ADR-0008.

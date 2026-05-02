@@ -1,4 +1,4 @@
-# Research Notes. Listeningway v2 Engine
+# Research Notes: Listeningway v2 Engine
 
 This document captures the focused research conducted before drafting the ADRs. Six parallel investigations covered MIR algorithms, WASAPI loopback patterns, real-time audio pipeline architectures, audio-reactive visualizer design conventions, perceptual loudness, and lock-free concurrency. Findings here feed directly into ADR-0001 through ADR-0008.
 
@@ -131,7 +131,7 @@ The five-layer design (Source → Ring → DSP → Snapshot → Consumers) **val
 
 ## 4. Audio-reactive visualizer design conventions
 
-**This research surfaced the most surprising findings.** The default uniforms a v2 engine should expose differ materially from MIR research recommendations.
+This research surfaced the most surprising findings. The default uniforms a v2 engine should expose differ materially from the MIR research recommendations.
 
 ### Finding: AudioLink is the de facto standard
 [AudioLink (VRChat ecosystem)](https://github.com/llealloo/audiolink) is the most actively coded-against audio-shader contract today. Two of its design decisions invert what we initially planned.
@@ -141,12 +141,12 @@ The five-layer design (Source → Ring → DSP → Snapshot → Consumers) **val
 
 **Decision (v2 addition):** `listeningway_volume_norm`, `_bass_norm`, `_mid_norm`, `_treb_norm` (instant ÷ 5–10 second running mean). Plus `_att` smoothed siblings.
 
-### Finding: AudioLink rejects BPM-locked phase, uses chronotensity instead
-**AudioLink does not expose explicit BPM or beat-phase [0,1).** The authors found exposing BPM is brittle (estimation lag, octave errors, genre dependence) while *chronotensity*. Accumulated per-band energy modulo 1.0. Is robust and gives shaders tempo-locked motion without `_Time.y`.
+### Finding: AudioLink rejects BPM-locked phase and uses chronotensity instead
+AudioLink does not expose explicit BPM or beat-phase [0,1). The authors found exposing BPM brittle (estimation lag, octave errors, genre dependence). They prefer *chronotensity*: accumulated per-band energy modulo 1.0, which holds up across genres and gives shaders tempo-locked motion without `_Time.y`.
 
 **Decision (v2 addition):** Add `listeningway_phase_volume`, `_phase_bass`, `_phase_treble` chronotensity-style accumulators. **Plus** the MIR-style `listeningway_beat_phase` from autocorrelation (works when tempo is confidently locked). Authors choose per use case.
 
-### Finding: Per-band beats as named uniforms. Skip
+### Finding: per-band beats as named uniforms (skip)
 Despite the MIR research recommending per-band onset detection (which we *do* need internally for tempo tracking), no major visualizer system exposes kick/snare/hat as named uniforms. Shader authors derive these from `freqbands`.
 
 **Decision:** Compute per-band onsets internally for the tempo tracker. Expose them only via per-band history arrays (cheap, more flexible). Not as named uniforms.
@@ -182,9 +182,10 @@ AudioLink's most-praised feature is per-band history (128 frames). Enables water
 ### Finding: Full LUFS is overkill; AGC matters more
 The LUFS research recommended adding a K-weighted 400 ms momentary loudness uniform. The visualizer research independently surfaced that **AGC normalization** (running-mean-relative) is what shader authors actually want. LUFS is for broadcast compliance, not music reactivity.
 
-### Resolution: Both, separated by purpose
-- `listeningway_volume_norm`. **AGC-normalized** raw RMS volume ÷ 5–10 second running mean. **Primary** uniform for shader authors. Solves "preset works at any source volume."
-- `listeningway_loudness`. **K-weighted** 400 ms momentary RMS. Optional, perceptually meaningful slow envelope. Cost: two biquads per channel + sliding-window sum.
+### Resolution: both, separated by purpose
+
+- `listeningway_volume_norm`: AGC-normalized raw RMS volume divided by a 5 to 10 second running mean. The primary uniform for shader authors. Solves "preset works at any source volume."
+- `listeningway_loudness`: K-weighted 400 ms momentary RMS. Optional, perceptually meaningful slow envelope. Costs two biquads per channel plus a sliding-window sum.
 
 Both are cheap (negligible vs FFT). They serve different shader needs and don't conflict.
 
@@ -212,7 +213,7 @@ For other sample rates: shelf at f0=1681.9744 Hz, G=3.99984 dB, Q=0.70717; HPF a
 
 Two tensions emerged between the lock-free agent's recommendations and the pipeline-architecture agent's recommendations.
 
-### Tension 1. SPSC ring: hand-rolled vs moodycamel ReaderWriterQueue
+### Tension 1: SPSC ring (hand-rolled vs moodycamel ReaderWriterQueue)
 
 | Option | Pros | Cons |
 |---|---|---|
@@ -223,7 +224,7 @@ Two tensions emerged between the lock-free agent's recommendations and the pipel
 
 The hand-rolled pattern remains documented (in this notes file) as a fallback if moodycamel ever becomes unavailable.
 
-### Tension 2. Snapshot publication: seqlock vs triple-buffer
+### Tension 2: snapshot publication (seqlock vs triple-buffer)
 
 | Option | Pros | Cons |
 |---|---|---|

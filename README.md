@@ -19,12 +19,12 @@ Listeningway listens to audio, runs the analysis on a dedicated DSP thread, and 
 ## Highlights in v2
 
 - Three audio sources, picked from the overlay dropdown:
-  - **System Audio (WASAPI Loopback)**, the default. Captures everything you hear. Works on Windows 10 and 11.
-  - **Game Audio Only (Process Loopback)**. Captures the host process only, so Discord, browsers, and music apps stop bleeding into the visualization. Requires Windows 10 22H2 (build 20348+) or Windows 11. See [ADR-0009](docs/adr/0009-process-audio-source.md).
-  - **None (Off)**. Disables analysis cleanly; uniforms zero out.
-- Stable provider switching via an explicit state machine. No more frozen visuals when you change sources.
+  - **System Audio (WASAPI Loopback)** is the default. It captures everything you hear and works on Windows 10 and 11.
+  - **Game Audio Only (Process Loopback)** captures the host process only, so Discord, browsers, and music apps stop bleeding into the visualization. Requires Windows 10 22H2 (build 20348+) or Windows 11. See [ADR-0009](docs/adr/0009-process-audio-source.md).
+  - **None (Off)** disables analysis cleanly; uniforms zero out.
+- Stable provider switching via an explicit state machine, so visuals no longer freeze when you change sources.
 - AGC-normalized uniforms (`volume_norm`, `bass_norm`, `mid_norm`, `treb_norm` and their `*_att` smoothed siblings) so shaders react consistently across loud and quiet content without per-track tuning.
-- Tempo with PLL phase, plus chronotensity for robust beat sync when the BPM estimator isn't locked.
+- Tempo with PLL phase, plus chronotensity for stable beat sync when the BPM estimator isn't locked.
 - Per-band history (64 frames × 64 bands) for waterfall and spectrogram shaders.
 - Per-stage DSP profiler in the overlay so you can see exactly where the cost is.
 
@@ -138,8 +138,8 @@ The five-layer pipeline (Source → Ring → DSP → Snapshot → Consumers) is 
 
 ### Build from source
 
-1. Run `prepare.bat`. Clones the ReShade SDK at v6.3.3, clones vcpkg, installs dependencies (kissfft, nlohmann-json, readerwriterqueue, gtest, rapidcheck) using the `x64-windows-static` triplet, and generates the CMake build tree.
-2. Run `build.bat`. Builds Release, renames the DLL to `.addon`, copies it to `dist/`, and (if `LISTENINGWAY_DEPLOY_DIR` is set or the FFXIV default path exists) copies it into the game folder for live testing. Set `LISTENINGWAY_DEPLOY_DIR=...` in your environment to retarget.
+1. Run `prepare.bat` to clone the ReShade SDK at v6.3.3, clone vcpkg, install dependencies (kissfft, nlohmann-json, readerwriterqueue, gtest, rapidcheck) using the `x64-windows-static` triplet, and generate the CMake build tree.
+2. Run `build.bat` to build Release, rename the DLL to `.addon`, copy it to `dist/`, and (if `LISTENINGWAY_DEPLOY_DIR` is set or the FFXIV default path exists) copy it into the game folder for live testing. Set `LISTENINGWAY_DEPLOY_DIR=...` in your environment to retarget.
 
 Toolchain: Visual Studio 2022 (MSVC 19.x), C++20, vcpkg in manifest mode. See [ADR-0008](docs/adr/0008-language-and-dependencies.md) for the full pinning rationale.
 

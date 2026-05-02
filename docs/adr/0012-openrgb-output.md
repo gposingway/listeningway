@@ -13,9 +13,9 @@ default rate, and the failure-mode story.
 
 User wishlist research (the multi-community survey done earlier in v2.x
 planning) showed audio-reactive RGB peripheral lighting as a recurring
-ask, with the de-facto open path being: drive the user's existing
+request. The de facto open path is to drive the user's existing
 [OpenRGB](https://openrgb.org) server as a TCP client. We do not ship
-RGB device drivers, do not enumerate vendor SDKs, do not bundle
+RGB device drivers, do not enumerate vendor SDKs, and do not bundle
 OpenRGB itself. Listeningway just becomes another OpenRGB client.
 
 ## Decision
@@ -162,47 +162,46 @@ the main toggle. Implemented via
 
 ### Positive
 
-- **Out-of-the-box compatibility with the OpenRGB ecosystem.** Any
-  device OpenRGB supports (hundreds of models across vendors)
+- Compatibility with the OpenRGB ecosystem comes for free. Any device
+  OpenRGB supports, which is hundreds of models across vendors,
   participates in the visualization with no per-vendor SDK work on our
   side.
-- **No driver install on top of OpenRGB.** Users who already run
+- No driver install is needed on top of OpenRGB. Users who already run
   OpenRGB get audio-reactive lighting by flipping one toggle.
-- **Protocol-version negotiation is delegated to cppSDK.** We don't
+- Protocol-version negotiation is delegated to cppSDK, so we don't
   risk the documented memory-corruption failure modes of mishandling
   OpenRGB version differences.
-- **Mapping is opinionated but visible.** "Every LED participates as
-  part of the spectrum" guarantees the user sees motion as soon as
-  audio plays. There's no zero-feedback failure mode where they
-  enable the consumer and nothing changes.
+- The default mapping is opinionated but visibly works. "Every LED
+  participates as part of the spectrum" guarantees the user sees motion
+  as soon as audio plays. There is no zero-feedback failure mode where
+  they enable the consumer and nothing changes.
 
 ### Negative
 
-- **No per-device or per-zone customization in v1.** Users who want
-  "case lighting on volume only" have to wait for a future ADR. v1
-  paints everything as spectrum.
-- **Mapping is opinionated.** Some users will hate the bass→treble
-  color choice or the brightness math. Brightness is a knob; full
-  remapping is not.
-- **OpenRGB server must be running.** If it isn't, the consumer surfaces
-  a connection error in the status line. We don't auto-launch
+- No per-device or per-zone customization in v1. Users who want "case
+  lighting on volume only" have to wait for a future ADR. v1 paints
+  everything as spectrum.
+- The mapping is opinionated, and some users will not like the
+  bass-to-treble colour choice or the brightness math. Brightness is a
+  knob; full remapping is not.
+- The OpenRGB server has to be running. If it isn't, the consumer
+  surfaces a connection error in the status line. We don't auto-launch
   OpenRGB; that's the user's responsibility.
-- **vcpkg-style overlay port not available.** `add_subdirectory()`
-  works; the cost is that the cppSDK source is part of our build
-  every time, ~30 extra translation units. Build time impact is small
-  but real.
+- A vcpkg-style overlay port isn't available. `add_subdirectory()`
+  works, but the cost is that the cppSDK source is part of our build
+  every time, around 30 extra translation units. The build-time impact
+  is small but real.
 
 ### Neutral
 
-- **No DMX / Art-Net / sACN bridge.** OSC (ADR-0011) covers
-  professional lighting via DMX bridges already; OpenRGB covers
-  consumer peripherals. The two ADRs together cover the primary user
-  audiences.
-- **No effect-mode driving (we always use custom/direct mode).** We
-  could in principle drive the user's named effects (rainbow, breathe,
-  etc.) instead of pushing per-LED frames, but custom mode is the
-  one consistent path across all devices and the higher-bandwidth
-  option. Worth revisiting if a specific use case demands it.
+- No DMX, Art-Net, or sACN bridge. OSC (ADR-0011) covers professional
+  lighting via DMX bridges already; OpenRGB covers consumer
+  peripherals. The two ADRs together cover the primary user audiences.
+- No effect-mode driving; we always use custom/direct mode. We could
+  drive the user's named effects (rainbow, breathing, and so on)
+  instead of pushing per-LED frames, but custom mode is the one
+  consistent path across all devices and the higher-bandwidth option.
+  Worth revisiting if a specific use case demands it.
 
 ## Alternatives considered
 
@@ -242,19 +241,20 @@ prerequisite.
 
 ### Auto-detect "spectrum-friendly" zones (e.g. keyboard rows, RAM strips)
 
-**Deferred.** Tempting, but no convention exists across vendors. Zone names are not standardized, zone types (`Single` / `Linear` /
-`Matrix`) only weakly correlate with intent, and any heuristic will
-be wrong somewhere. v1 paints all LEDs uniformly as part of the
-spectrum, which is the lowest-surprise default.
+**Deferred.** Tempting, but no convention exists across vendors: zone
+names are not standardized, zone types (`Single`, `Linear`, `Matrix`)
+only weakly correlate with intent, and any heuristic will be wrong
+somewhere. v1 paints all LEDs uniformly as part of the spectrum, which
+is the lowest-surprise default.
 
 ## References
 
-- ADR-0010. `IOutputConsumer` abstraction; vendoring policy; security
-  stance for toggleable network consumers.
-- ADR-0011. Sibling ADR for the OSC consumer.
-- [Youda008/OpenRGB-cppSDK on GitHub](https://github.com/Youda008/OpenRGB-cppSDK)
-- [OpenRGB project home](https://openrgb.org)
-- [`third_party/Youda008-OpenRGB-cppSDK/ATTRIBUTION.md`](../../third_party/Youda008-OpenRGB-cppSDK/ATTRIBUTION.md)
-- [`src/output/openrgb_consumer.cpp`](../../src/output/openrgb_consumer.cpp)
-- OpenRGB GitLab issue [#2989 (CPU wake-ups)](https://gitlab.com/CalcProgrammer1/OpenRGB/-/issues/2989)
-- OpenRGB GitLab issue [#1273 (anti-cheat)](https://gitlab.com/CalcProgrammer1/OpenRGB/-/issues/1273). Affects the OpenRGB *server* due to its kernel-mode drivers; not a Listeningway exposure.
+- ADR-0010 covers the `IOutputConsumer` abstraction, vendoring policy,
+  and the security stance for toggleable network consumers.
+- ADR-0011 is the sibling ADR for the OSC consumer.
+- [Youda008/OpenRGB-cppSDK on GitHub](https://github.com/Youda008/OpenRGB-cppSDK).
+- [OpenRGB project home](https://openrgb.org).
+- [`third_party/Youda008-OpenRGB-cppSDK/ATTRIBUTION.md`](../../third_party/Youda008-OpenRGB-cppSDK/ATTRIBUTION.md).
+- [`src/output/openrgb_consumer.cpp`](../../src/output/openrgb_consumer.cpp).
+- OpenRGB GitLab issue [#2989 (CPU wake-ups)](https://gitlab.com/CalcProgrammer1/OpenRGB/-/issues/2989).
+- OpenRGB GitLab issue [#1273 (anti-cheat)](https://gitlab.com/CalcProgrammer1/OpenRGB/-/issues/1273), which affects the OpenRGB *server* due to its kernel-mode drivers. It is not a Listeningway exposure.
