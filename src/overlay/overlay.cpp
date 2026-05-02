@@ -305,20 +305,6 @@ void subgroup_label(const char* label) {
     ImGui::TextDisabled("%s", label);
 }
 
-// "Advanced" sub-disclosure inside a section's settings drop-down.
-// Returns the open state. `id` must be unique per call site.
-bool advanced_subtree(const char* id) {
-    char node_id[64];
-    std::snprintf(node_id, sizeof(node_id), "Advanced##%s", id);
-    ImGui::PushStyleColor(ImGuiCol_Text, ImGui::GetStyleColorVec4(ImGuiCol_TextDisabled));
-    const bool open = ImGui::TreeNodeEx(node_id,
-        ImGuiTreeNodeFlags_SpanAvailWidth | ImGuiTreeNodeFlags_NoTreePushOnOpen);
-    ImGui::PopStyleColor();
-    if (ImGui::IsItemHovered()) {
-        ImGui::SetTooltip("Engineering knobs. Defaults work for most music; only touch if you know what you're doing.");
-    }
-    return open;
-}
 
 // ---- Integration row (Integrations section) ----------------------------
 
@@ -732,31 +718,30 @@ static void section_beat(const AudioSnapshot& snap, config::Settings& cfg, bool&
             dirty = true;
         tip("How fast the listeningway_beat uniform fades after each onset. Higher = sharper flashes.\nTechnical: beat.beat_decay_per_sec, /sec");
 
-        if (advanced_subtree("beat_adv")) {
-            ImGui::Indent(kSubGroupIndent);
-            if (slider_row("Threshold window (ms)", &cfg.beat.threshold_window_ms, 10.0f, 1000.0f, "%.0f"))
-                dirty = true;
-            tip("Sliding window for the adaptive threshold.\nTechnical: beat.threshold_window_ms");
-            if (slider_row("Refractory (ms)", &cfg.beat.refractory_ms, 5.0f, 500.0f, "%.0f"))
-                dirty = true;
-            tip("Minimum spacing between detected onsets. Suppresses double-fires.\nTechnical: beat.refractory_ms");
-            if (slider_row("PLL gain (P)", &cfg.beat.phase_kp, 0.0f, 1.0f, "%.3f"))
-                dirty = true;
-            tip("How hard the beat phase pulls toward each detected onset.\nTechnical: beat.phase_kp");
-            if (slider_row("PLL gain (I)", &cfg.beat.phase_ki, 0.0f, 0.5f, "%.4f"))
-                dirty = true;
-            tip("How fast tempo drift is corrected.\nTechnical: beat.phase_ki");
-            if (slider_row("Tempo prior (BPM)", &cfg.beat.tempo_prior_bpm, 60.0f, 200.0f, "%.0f"))
-                dirty = true;
-            tip("Center of the tempo prior. Mitigates octave errors (locking to half/double speed).\nTechnical: beat.tempo_prior_bpm");
-            if (slider_row("Tempo prior width (oct)", &cfg.beat.tempo_prior_sigma, 0.1f, 2.0f, "%.2f"))
-                dirty = true;
-            tip("Width of the tempo prior in octaves. Tighter = stronger pull toward the prior BPM.\nTechnical: beat.tempo_prior_sigma");
-            if (slider_row("Tempo window (s)", &cfg.beat.tempo_window_sec, 1.0f, 30.0f, "%.1f"))
-                dirty = true;
-            tip("Autocorrelation history length. Longer = more stable tempo, slower to adapt.\nTechnical: beat.tempo_window_sec");
-            ImGui::Unindent(kSubGroupIndent);
-        }
+        subgroup_label("Advanced:");
+        ImGui::Indent(kSubGroupIndent);
+        if (slider_row("Threshold window (ms)", &cfg.beat.threshold_window_ms, 10.0f, 1000.0f, "%.0f"))
+            dirty = true;
+        tip("Sliding window for the adaptive threshold.\nTechnical: beat.threshold_window_ms");
+        if (slider_row("Refractory (ms)", &cfg.beat.refractory_ms, 5.0f, 500.0f, "%.0f"))
+            dirty = true;
+        tip("Minimum spacing between detected onsets. Suppresses double-fires.\nTechnical: beat.refractory_ms");
+        if (slider_row("PLL gain (P)", &cfg.beat.phase_kp, 0.0f, 1.0f, "%.3f"))
+            dirty = true;
+        tip("How hard the beat phase pulls toward each detected onset.\nTechnical: beat.phase_kp");
+        if (slider_row("PLL gain (I)", &cfg.beat.phase_ki, 0.0f, 0.5f, "%.4f"))
+            dirty = true;
+        tip("How fast tempo drift is corrected.\nTechnical: beat.phase_ki");
+        if (slider_row("Tempo prior (BPM)", &cfg.beat.tempo_prior_bpm, 60.0f, 200.0f, "%.0f"))
+            dirty = true;
+        tip("Center of the tempo prior. Mitigates octave errors (locking to half/double speed).\nTechnical: beat.tempo_prior_bpm");
+        if (slider_row("Tempo prior width (oct)", &cfg.beat.tempo_prior_sigma, 0.1f, 2.0f, "%.2f"))
+            dirty = true;
+        tip("Width of the tempo prior in octaves. Tighter = stronger pull toward the prior BPM.\nTechnical: beat.tempo_prior_sigma");
+        if (slider_row("Tempo window (s)", &cfg.beat.tempo_window_sec, 1.0f, 30.0f, "%.1f"))
+            dirty = true;
+        tip("Autocorrelation history length. Longer = more stable tempo, slower to adapt.\nTechnical: beat.tempo_window_sec");
+        ImGui::Unindent(kSubGroupIndent);
         ImGui::Unindent(kSubGroupIndent);
     }
 }
@@ -875,34 +860,33 @@ static void section_spectrum(const AudioSnapshot& snap, config::Settings& cfg, b
         tip("Width of each EQ knob's influence (Gaussian σ).\nTechnical: frequency.equalizer_width");
         ImGui::Unindent(kSubGroupIndent);
 
-        if (advanced_subtree("spectrum_adv")) {
-            ImGui::Indent(kSubGroupIndent);
-            const char* const scales[] = {"Linear", "Log", "Mel (Slaney)"};
-            int scale = static_cast<int>(cfg.frequency.band_scale);
-            if (combo_row("Band scale", &scale, scales, 3)) {
-                cfg.frequency.band_scale =
-                    static_cast<config::FrequencyConfig::BandScale>(scale);
-                dirty = true;
-            }
-            tip("How frequencies map onto the bands.\n  • Mel: matches human pitch perception.\n  • Log: v1 default.\n  • Linear: legacy.\nTechnical: frequency.band_scale");
-
-            if (slider_int_row("Band count", &cfg.frequency.band_count, 8, 128))
-                dirty = true;
-            tip("Number of frequency bands published. Must match shader array size.\nTechnical: frequency.band_count, [8, 128]");
-            if (slider_int_row("Analysis resolution (FFT)", &cfg.frequency.fft_size, 256, 8192))
-                dirty = true;
-            tip("FFT window size. Higher = more frequency detail, more CPU. Power-of-two recommended.\nTechnical: frequency.fft_size");
-            if (slider_row("Low cutoff (Hz)", &cfg.frequency.min_freq, 10.0f, 500.0f, "%.0f"))
-                dirty = true;
-            tip("Lowest frequency included.\nTechnical: frequency.min_freq, Hz");
-            if (slider_row("High cutoff (Hz)", &cfg.frequency.max_freq, 2000.0f, 22050.0f, "%.0f"))
-                dirty = true;
-            tip("Highest frequency included.\nTechnical: frequency.max_freq, Hz");
-            if (slider_row("Magnitude scaling", &cfg.frequency.band_norm, 0.001f, 1.0f, "%.3f"))
-                dirty = true;
-            tip("Raw FFT magnitude → band amplitude scaling factor.\nTechnical: frequency.band_norm");
-            ImGui::Unindent(kSubGroupIndent);
+        subgroup_label("Advanced:");
+        ImGui::Indent(kSubGroupIndent);
+        const char* const scales[] = {"Linear", "Log", "Mel (Slaney)"};
+        int scale = static_cast<int>(cfg.frequency.band_scale);
+        if (combo_row("Band scale", &scale, scales, 3)) {
+            cfg.frequency.band_scale =
+                static_cast<config::FrequencyConfig::BandScale>(scale);
+            dirty = true;
         }
+        tip("How frequencies map onto the bands.\n  • Mel: matches human pitch perception.\n  • Log: v1 default.\n  • Linear: legacy.\nTechnical: frequency.band_scale");
+
+        if (slider_int_row("Band count", &cfg.frequency.band_count, 8, 128))
+            dirty = true;
+        tip("Number of frequency bands published. Must match shader array size.\nTechnical: frequency.band_count, [8, 128]");
+        if (slider_int_row("Analysis resolution (FFT)", &cfg.frequency.fft_size, 256, 8192))
+            dirty = true;
+        tip("FFT window size. Higher = more frequency detail, more CPU. Power-of-two recommended.\nTechnical: frequency.fft_size");
+        if (slider_row("Low cutoff (Hz)", &cfg.frequency.min_freq, 10.0f, 500.0f, "%.0f"))
+            dirty = true;
+        tip("Lowest frequency included.\nTechnical: frequency.min_freq, Hz");
+        if (slider_row("High cutoff (Hz)", &cfg.frequency.max_freq, 2000.0f, 22050.0f, "%.0f"))
+            dirty = true;
+        tip("Highest frequency included.\nTechnical: frequency.max_freq, Hz");
+        if (slider_row("Magnitude scaling", &cfg.frequency.band_norm, 0.001f, 1.0f, "%.3f"))
+            dirty = true;
+        tip("Raw FFT magnitude → band amplitude scaling factor.\nTechnical: frequency.band_norm");
+        ImGui::Unindent(kSubGroupIndent);
         ImGui::Unindent(kSubGroupIndent);
     }
 }
@@ -1014,32 +998,28 @@ static void section_advanced(const AudioSnapshot& snap, config::Settings& cfg, b
         tip("Rate for the treble-driven phase.\nTechnical: chronotensity.gain_treble");
         ImGui::Unindent(kSubGroupIndent);
 
-        if (advanced_subtree("advanced_adv")) {
-            ImGui::Indent(kSubGroupIndent);
-            subgroup_label("Auto-leveling (AGC):");
-            ImGui::Indent(kSubGroupIndent);
-            if (slider_row("Window (s)", &cfg.agc.window_seconds, 0.5f, 30.0f, "%.1f"))
-                dirty = true;
-            tip("Running-mean window for auto-leveling.\nTechnical: agc.window_seconds");
-            if (slider_row("Clamp max", &cfg.agc.clamp_max, 1.5f, 8.0f, "%.1f"))
-                dirty = true;
-            tip("Upper bound on the auto-leveled value.\nTechnical: agc.clamp_max");
-            if (slider_row("Smoothing attack (ms)", &cfg.agc.att_attack_ms, 1.0f, 1000.0f, "%.0f"))
-                dirty = true;
-            tip("How fast the smoothed (_att) sibling rises.\nTechnical: agc.att_attack_ms");
-            if (slider_row("Smoothing release (ms)", &cfg.agc.att_release_ms, 1.0f, 5000.0f, "%.0f"))
-                dirty = true;
-            tip("How fast the smoothed sibling falls.\nTechnical: agc.att_release_ms");
-            ImGui::Unindent(kSubGroupIndent);
+        subgroup_label("Auto-leveling (AGC):");
+        ImGui::Indent(kSubGroupIndent);
+        if (slider_row("Window (s)", &cfg.agc.window_seconds, 0.5f, 30.0f, "%.1f"))
+            dirty = true;
+        tip("Running-mean window for auto-leveling.\nTechnical: agc.window_seconds");
+        if (slider_row("Clamp max", &cfg.agc.clamp_max, 1.5f, 8.0f, "%.1f"))
+            dirty = true;
+        tip("Upper bound on the auto-leveled value.\nTechnical: agc.clamp_max");
+        if (slider_row("Smoothing attack (ms)", &cfg.agc.att_attack_ms, 1.0f, 1000.0f, "%.0f"))
+            dirty = true;
+        tip("How fast the smoothed (_att) sibling rises.\nTechnical: agc.att_attack_ms");
+        if (slider_row("Smoothing release (ms)", &cfg.agc.att_release_ms, 1.0f, 5000.0f, "%.0f"))
+            dirty = true;
+        tip("How fast the smoothed sibling falls.\nTechnical: agc.att_release_ms");
+        ImGui::Unindent(kSubGroupIndent);
 
-            subgroup_label("Loudness:");
-            ImGui::Indent(kSubGroupIndent);
-            if (slider_row("Window (ms)", &cfg.loudness.window_ms, 50.0f, 3000.0f, "%.0f"))
-                dirty = true;
-            tip("K-weighted RMS window. 400 ms = BS.1770 'momentary' loudness.\nTechnical: loudness.window_ms");
-            ImGui::Unindent(kSubGroupIndent);
-            ImGui::Unindent(kSubGroupIndent);
-        }
+        subgroup_label("Loudness:");
+        ImGui::Indent(kSubGroupIndent);
+        if (slider_row("Window (ms)", &cfg.loudness.window_ms, 50.0f, 3000.0f, "%.0f"))
+            dirty = true;
+        tip("K-weighted RMS window. 400 ms = BS.1770 'momentary' loudness.\nTechnical: loudness.window_ms");
+        ImGui::Unindent(kSubGroupIndent);
         ImGui::Unindent(kSubGroupIndent);
     }
 }
