@@ -79,8 +79,8 @@ public:
             ring_pos_ = (ring_pos_ + 1) % ring_.size();
         }
 
-        const double n_active = std::max<size_t>(1, ring_.size() * ch);
-        const double mean_sq = running_sum_ / static_cast<double>(n_active);
+        const size_t n_active_st = (std::max<size_t>)(size_t{1}, ring_.size() * ch);
+        const double mean_sq = running_sum_ / static_cast<double>(n_active_st);
         frame.loudness = std::min(1.0f, static_cast<float>(std::sqrt(mean_sq)));
     }
 

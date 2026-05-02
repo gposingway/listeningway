@@ -31,17 +31,17 @@ add_library(${PROJECT_NAME} SHARED
     src/listeningway_addon.cpp
     src/listeningway_constants.h
 
-    # Audio source layer (ADR-0002 layer 1)
+    # Audio source layer
     src/audio/source/source_format.h
     src/audio/source/i_audio_source.h
     src/audio/source/off_source.h
     src/audio/source/wasapi_loopback_source.h
     src/audio/source/wasapi_loopback_source.cpp
 
-    # Ring buffer layer (ADR-0002 layer 2)
+    # Ring buffer layer
     src/audio/ring/frame_ring.h
 
-    # DSP pipeline layer (ADR-0002 layer 3)
+    # DSP pipeline layer
     src/audio/dsp/analysis_frame.h
     src/audio/dsp/i_dsp_stage.h
     src/audio/dsp/pipeline.h
@@ -63,13 +63,29 @@ add_library(${PROJECT_NAME} SHARED
     src/audio/dsp/stages/directional_stage.h
     src/audio/dsp/stages/loudness_stage.h
 
-    # Snapshot publication (ADR-0002 layer 4)
+    # Snapshot publication
     src/audio/snapshot/audio_snapshot.h
     src/audio/snapshot/seqlock_snapshot.h
 
-    # Configuration (ADR-0004)
+    # Pipeline orchestrator + state machine
+    src/audio/pipeline/audio_system.h
+    src/audio/pipeline/audio_system.cpp
+
+    # Configuration
     src/config/setting.h
     src/config/settings.h
+    src/config/settings_json.h
+    src/config/store.h
+    src/config/store.cpp
+
+    # Output
+    src/output/shader_contract.h
+    src/output/uniform_publisher.h
+    src/output/uniform_publisher.cpp
+
+    # Overlay (ImGui)
+    src/overlay/overlay.h
+    src/overlay/overlay.cpp
 
     # Resource file (version info)
     assets/listeningway.rc
@@ -78,6 +94,7 @@ add_library(${PROJECT_NAME} SHARED
 target_include_directories(${PROJECT_NAME} PRIVATE
     ${RESHADE_SDK_PATH}
     ${CMAKE_SOURCE_DIR}/src
+    ${CMAKE_SOURCE_DIR}/third_party/reshade/deps/imgui
 )
 
 target_compile_definitions(${PROJECT_NAME} PRIVATE
