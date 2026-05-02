@@ -1,7 +1,14 @@
 // ---------------------------------------------
 // Listeningway v2 — addon entry point.
-// Owns: config Store, AudioSystem (which owns sources, ring, pipeline,
-// snapshot, DSP thread), ConsumerRegistry (which owns the output consumers).
+//
+// CRITICAL: DllMain runs under the Windows loader lock. This file does
+// nothing that could deadlock the loader: no thread spawning, no
+// WSAStartup, no COM init, no file I/O. All heavy work is deferred to
+// the first ReShade frame via the boot scheduler, which calls App::start()
+// from the render thread once the loader lock is released.
+//
+// The contents of "start" live in src/app.cpp. This file knows about
+// ReShade event lifecycle and the boot scheduler — nothing else.
 // ---------------------------------------------
 #define IMGUI_DISABLE_INCLUDE_IMCONFIG_H
 #define ImTextureID ImU64
@@ -9,32 +16,10 @@
 #include <reshade.hpp>
 #include <windows.h>
 
-#include <filesystem>
 #include <memory>
 
-#include "audio/pipeline/audio_system.h"
-#include "audio/source/off_source.h"
-#include "audio/source/process_audio_source.h"
-#include "audio/source/wasapi_loopback_source.h"
-#include "audio/dsp/stages/volume_stage.h"
-#include "audio/dsp/stages/fft_stage.h"
-#include "audio/dsp/stages/bands_stage.h"
-#include "audio/dsp/stages/log_boost_stage.h"
-#include "audio/dsp/stages/equalizer_stage.h"
-#include "audio/dsp/stages/band_norm_stage.h"
-#include "audio/dsp/stages/spectral_centroid_stage.h"
-#include "audio/dsp/stages/flux_stage.h"
-#include "audio/dsp/stages/beat_stage.h"
-#include "audio/dsp/stages/chronotensity_stage.h"
-#include "audio/dsp/stages/pan_stage.h"
-#include "audio/dsp/stages/directional_stage.h"
-#include "audio/dsp/stages/loudness_stage.h"
-#include "config/store.h"
-#include "output/consumer_registry.h"
-#include "output/openrgb_consumer.h"
-#include "output/osc_consumer.h"
-#include "output/uniform_publisher_consumer.h"
-#include "overlay/overlay_consumer.h"
+#include "app.h"
+#include "boot/scheduler.h"
 
 extern "C" __declspec(dllexport) const char* NAME = "Listeningway";
 extern "C" __declspec(dllexport) const char* DESCRIPTION =
@@ -42,77 +27,24 @@ extern "C" __declspec(dllexport) const char* DESCRIPTION =
 
 namespace {
 
-std::unique_ptr<lw::config::Store>             g_store;
-std::unique_ptr<lw::AudioSystem>               g_system;
-std::unique_ptr<lw::output::ConsumerRegistry>  g_consumers;
-HMODULE g_module_handle = nullptr;
+std::unique_ptr<lw::App>             g_app;
+std::unique_ptr<lw::boot::Scheduler> g_boot;
+HMODULE                              g_module = nullptr;
 
-std::filesystem::path settings_path_next_to_dll() {
-    char buf[MAX_PATH] = {};
-    GetModuleFileNameA(g_module_handle, buf, MAX_PATH);
-    std::filesystem::path p(buf);
-    return p.parent_path() / "Listeningway.json";
-}
-
-void compose_pipeline(lw::dsp::Pipeline& p) {
-    using namespace lw::dsp;
-    p.add(std::make_unique<VolumeStage>());
-    p.add(std::make_unique<FftStage>());
-    p.add(std::make_unique<BandsStage>());
-    p.add(std::make_unique<LogBoostStage>());
-    p.add(std::make_unique<EqualizerStage>());
-    p.add(std::make_unique<BandNormStage>());
-    p.add(std::make_unique<SpectralCentroidStage>());
-    p.add(std::make_unique<FluxStage>());
-    p.add(std::make_unique<BeatStage>());
-    p.add(std::make_unique<ChronotensityStage>());
-    p.add(std::make_unique<PanStage>());
-    p.add(std::make_unique<DirectionalStage>());
-    p.add(std::make_unique<LoudnessStage>());
-}
-
-bool init() {
-    g_store = std::make_unique<lw::config::Store>(settings_path_next_to_dll());
-    g_store->load();
-
-    g_system = std::make_unique<lw::AudioSystem>(g_store.get());
-    g_system->register_source(std::make_unique<lw::source::WasapiLoopbackSource>());
-    g_system->register_source(std::make_unique<lw::source::ProcessAudioSource>());
-    g_system->register_source(std::make_unique<lw::source::OffSource>());
-    compose_pipeline(g_system->pipeline());
-
-    if (!g_system->pipeline().validate().empty()) {
-        return false;
+void on_frame_tick(reshade::api::effect_runtime*,
+                    reshade::api::command_list*,
+                    reshade::api::resource_view,
+                    reshade::api::resource_view) {
+    // Boot phase: drive the scheduler one step per frame.
+    if (g_boot) {
+        g_boot->tick();
+        if (g_boot->empty() || g_boot->failed()) {
+            g_boot.reset();
+        }
+        return;
     }
-    if (!g_system->start()) {
-        return false;
-    }
-
-    // Build the consumer registry. Internal consumers first (always-on);
-    // toggleable network consumers will be appended in subsequent phases.
-    g_consumers = std::make_unique<lw::output::ConsumerRegistry>();
-    g_consumers->add(std::make_unique<lw::output::UniformPublisherConsumer>());
-    g_consumers->add(std::make_unique<lw::overlay::OverlayConsumer>(*g_store, *g_consumers));
-    g_consumers->add(std::make_unique<lw::output::OscConsumer>(*g_store));
-    g_consumers->add(std::make_unique<lw::output::OpenRgbConsumer>(*g_store));
-
-    g_consumers->start_all(*g_system, g_module_handle, g_store->snapshot());
-    return true;
-}
-
-void shutdown() {
-    if (g_consumers) {
-        g_consumers->stop_all();
-        g_consumers.reset();
-    }
-    if (g_system) {
-        g_system->stop();
-        g_system.reset();
-    }
-    if (g_store) {
-        g_store->save();
-        g_store.reset();
-    }
+    // Post-boot: routine maintenance (consumer self-disarm polling, etc.).
+    if (g_app) g_app->tick_running();
 }
 
 }  // namespace
@@ -120,15 +52,34 @@ void shutdown() {
 BOOL APIENTRY DllMain(HMODULE hModule, DWORD reason, LPVOID) {
     switch (reason) {
         case DLL_PROCESS_ATTACH:
-            g_module_handle = hModule;
+            g_module = hModule;
             DisableThreadLibraryCalls(hModule);
             if (!reshade::register_addon(hModule)) return FALSE;
-            init();
+
+            // Construct the App but do not start it here — the scheduler
+            // runs start() on the render thread once the loader lock is
+            // released.
+            g_app = std::make_unique<lw::App>(hModule);
+
+            g_boot = std::make_unique<lw::boot::Scheduler>();
+            g_boot->enqueue("start", [] {
+                return g_app ? g_app->tick_boot()
+                             : lw::boot::StepResult::Failed;
+            });
+
+            reshade::register_event<reshade::addon_event::reshade_begin_effects>(
+                &on_frame_tick);
             break;
+
         case DLL_PROCESS_DETACH:
-            shutdown();
+            reshade::unregister_event<reshade::addon_event::reshade_begin_effects>(
+                &on_frame_tick);
+            if (g_app) g_app->stop();   // idempotent; partial-init-safe
+            g_app.reset();
+            g_boot.reset();
             reshade::unregister_addon(hModule);
             break;
+
         default:
             break;
     }

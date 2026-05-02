@@ -108,11 +108,16 @@ bool OpenRgbConsumer::is_enabled(const config::Settings& s) const {
     return s.network.openrgb.enabled;
 }
 
+void OpenRgbConsumer::disarm_in_settings(config::Settings& s) const {
+    s.network.openrgb.enabled = false;
+}
+
 bool OpenRgbConsumer::start(AudioSystem& system, HMODULE) {
     if (running_.load()) return true;
     if (!store_) return false;
 
     system_ = &system;
+    wants_disarm_.store(false);   // clear stale request from a previous run
     {
         std::lock_guard<std::mutex> g(status_mutex_);
         last_error_.clear();
@@ -132,6 +137,7 @@ bool OpenRgbConsumer::start(AudioSystem& system, HMODULE) {
 void OpenRgbConsumer::stop() {
     running_.store(false);
     if (worker_.joinable()) worker_.join();
+    wants_disarm_.store(false);   // clear so a future start() doesn't disarm immediately
     system_ = nullptr;
     {
         std::lock_guard<std::mutex> g(status_mutex_);
@@ -247,6 +253,9 @@ void OpenRgbConsumer::worker_main() {
     };
 
     if (!try_connect()) {
+        // Initial connect failed. Signal the registry to disarm the
+        // settings flag so the toggle reflects reality.
+        wants_disarm_.store(true);
         running_.store(false);
         return;
     }

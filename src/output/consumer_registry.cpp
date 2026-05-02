@@ -1,5 +1,8 @@
 #include "consumer_registry.h"
 
+#include "../config/settings.h"
+#include "../config/store.h"
+
 namespace lw::output {
 
 void ConsumerRegistry::add(std::unique_ptr<IOutputConsumer> consumer) {
@@ -56,6 +59,22 @@ IOutputConsumer* ConsumerRegistry::find_by_id(std::string_view id) const {
         if (c->id() == id) return c.get();
     }
     return nullptr;
+}
+
+void ConsumerRegistry::poll_self_disarm(AudioSystem& system, HMODULE addon_module,
+                                          config::Store& store) {
+    bool any = false;
+    for (auto& c : consumers_) {
+        if (c->wants_self_disarm()) {
+            store.mutate([&](config::Settings& s) { c->disarm_in_settings(s); });
+            any = true;
+        }
+    }
+    if (any) {
+        // Apply the new settings: any consumer whose flag was just cleared
+        // is stopped here, syncing `active_[]` with worker-thread reality.
+        on_settings_changed(system, addon_module, store.snapshot());
+    }
 }
 
 }  // namespace lw::output

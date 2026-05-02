@@ -61,6 +61,18 @@ public:
     /// Returns true if a test message went out, false if the consumer
     /// doesn't support it or the test failed. Default: not supported.
     virtual bool send_test_packet() { return false; }
+
+    /// True if the consumer's worker thread has decided it cannot continue
+    /// (e.g., initial connect failed, socket creation failed). Polled by
+    /// the registry every frame; if true, the registry mutates the
+    /// matching settings flag to false and stops the consumer so the UI
+    /// reflects reality. Default: never self-disarms.
+    virtual bool wants_self_disarm() const { return false; }
+
+    /// Apply the self-disarm to the settings struct: clear "this
+    /// consumer's enable flag." Called by the registry when
+    /// wants_self_disarm() returned true. Default: no-op.
+    virtual void disarm_in_settings(config::Settings&) const {}
 };
 
 }  // namespace lw::output

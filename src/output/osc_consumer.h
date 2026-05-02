@@ -44,6 +44,9 @@ public:
     /// waiting for the worker tick.
     bool send_test_packet() override;
 
+    bool wants_self_disarm() const override { return wants_disarm_.load(); }
+    void disarm_in_settings(config::Settings& s) const override;
+
 private:
     void worker_main();
 
@@ -52,6 +55,10 @@ private:
 
     std::thread       worker_;
     std::atomic<bool> running_{false};
+
+    // Set by worker_main() on hard failure (socket() or DNS resolve) —
+    // when the worker is going to exit and the toggle should follow.
+    std::atomic<bool> wants_disarm_{false};
 
     // Status — read from any thread.
     mutable std::mutex    status_mutex_;

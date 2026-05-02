@@ -127,11 +127,16 @@ bool OscConsumer::is_enabled(const config::Settings& s) const {
     return s.network.osc.enabled;
 }
 
+void OscConsumer::disarm_in_settings(config::Settings& s) const {
+    s.network.osc.enabled = false;
+}
+
 bool OscConsumer::start(AudioSystem& system, HMODULE) {
     if (running_.load()) return true;
     if (!store_) return false;
 
     system_ = &system;
+    wants_disarm_.store(false);
     {
         std::lock_guard<std::mutex> g(status_mutex_);
         last_error_.clear();
@@ -149,6 +154,7 @@ bool OscConsumer::start(AudioSystem& system, HMODULE) {
 void OscConsumer::stop() {
     running_.store(false);
     if (worker_.joinable()) worker_.join();
+    wants_disarm_.store(false);
     system_ = nullptr;
 }
 
@@ -219,6 +225,7 @@ void OscConsumer::worker_main() {
     if (!wsa.init()) {
         std::lock_guard<std::mutex> g(status_mutex_);
         last_error_ = "WSAStartup failed";
+        wants_disarm_.store(true);
         running_.store(false);
         return;
     }
@@ -227,6 +234,7 @@ void OscConsumer::worker_main() {
     if (sock == INVALID_SOCKET) {
         std::lock_guard<std::mutex> g(status_mutex_);
         last_error_ = "socket() failed";
+        wants_disarm_.store(true);
         running_.store(false);
         return;
     }
@@ -239,6 +247,7 @@ void OscConsumer::worker_main() {
             std::lock_guard<std::mutex> g(status_mutex_);
             last_error_ = err;
             ::closesocket(sock);
+            wants_disarm_.store(true);
             running_.store(false);
             return;
         }

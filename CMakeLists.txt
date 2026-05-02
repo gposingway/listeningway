@@ -33,6 +33,12 @@ add_library(${PROJECT_NAME} SHARED
     # Top-level entry
     src/listeningway_addon.cpp
     src/listeningway_constants.h
+    src/app.h
+    src/app.cpp
+
+    # Boot scheduler (defers heavy init off the loader lock)
+    src/boot/scheduler.h
+    src/boot/scheduler.cpp
 
     # Audio source layer
     src/audio/source/source_format.h

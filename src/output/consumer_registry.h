@@ -13,7 +13,7 @@
 
 namespace lw {
 class AudioSystem;
-namespace config { struct Settings; }
+namespace config { struct Settings; class Store; }
 }
 
 namespace lw::output {
@@ -47,6 +47,15 @@ public:
 
     /// Look up a consumer by id() string. Returns nullptr if not found.
     IOutputConsumer* find_by_id(std::string_view id) const;
+
+    /// Once-per-frame maintenance: poll consumers for self-disarm
+    /// requests. If any consumer's worker has decided it cannot continue
+    /// (initial connect failure, socket creation failure), mutate the
+    /// matching settings flag to false via `store.mutate()`, then run
+    /// `on_settings_changed()` so the consumer's stop() runs and the
+    /// registry's `active_` mirrors reality.
+    void poll_self_disarm(AudioSystem& system, HMODULE addon_module,
+                           config::Store& store);
 
 private:
     std::vector<std::unique_ptr<IOutputConsumer>> consumers_;

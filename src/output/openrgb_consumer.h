@@ -49,6 +49,9 @@ public:
     /// overlay verify connectivity without waiting for music.
     bool send_test_packet() override;
 
+    bool wants_self_disarm() const override { return wants_disarm_.load(); }
+    void disarm_in_settings(config::Settings& s) const override;
+
 private:
     void worker_main();
 
@@ -57,6 +60,11 @@ private:
 
     std::thread       worker_;
     std::atomic<bool> running_{false};
+
+    // Set by worker_main() when initial connect fails or socket creation
+    // fails — i.e., when the worker is going to exit and the on/off
+    // toggle in settings should follow.
+    std::atomic<bool> wants_disarm_{false};
 
     // Status — read from any thread.
     mutable std::mutex    status_mutex_;
