@@ -383,14 +383,12 @@ const char* current_source_label(AudioSystem& system, const config::Settings& cf
 
 // ---- Audio Source -------------------------------------------------------
 
-static void section_audio_source(AudioSystem& system, config::Settings& cfg, bool& dirty) {
-    using namespace overlay_style;
+static void section_audio_source(AudioSystem& system, config::Settings& cfg, bool&) {
     const char* current_label = current_source_label(system, cfg);
     char header_hint[96];
-    std::snprintf(header_hint, sizeof(header_hint), "%s • %s",
+    std::snprintf(header_hint, sizeof(header_hint), "%s \xE2\x80\xA2 %s",
                    state_label(system.state()), current_label);
-
-    const bool show = section_header_with_settings("Audio Source", header_hint, "audio_source");
+    section_header_only("Audio Source", header_hint);
 
     const auto sources = system.available_sources();
     int current = 0;
@@ -411,22 +409,9 @@ static void section_audio_source(AudioSystem& system, config::Settings& cfg, boo
     }
     ImGui::PopItemWidth();
     tip("Where Listeningway listens.\n"
-        "  • System Audio: everything the speakers play.\n"
-        "  • Game Audio Only: just this game (Win10 22H2+).\n"
-        "  • None: turn analysis off.");
-
-    if (show) {
-        ImGui::Indent(kSubGroupIndent);
-        if (advanced_subtree("audio_source_adv")) {
-            ImGui::Indent(kSubGroupIndent);
-            if (ImGui::Checkbox("Enable SIMD (SSE/AVX)", &cfg.audio.simd_enabled)) dirty = true;
-            tip("Use SIMD intrinsics in DSP stages where available. v2 has no SIMD path yet — toggle is reserved for the v1.5 xsimd port.\nTechnical: audio.simd_enabled");
-            if (ImGui::Checkbox("Debug logging", &cfg.debug.debug_logging)) dirty = true;
-            tip("Verbose log to listeningway.log next to the addon.\nTechnical: debug.debug_logging");
-            ImGui::Unindent(kSubGroupIndent);
-        }
-        ImGui::Unindent(kSubGroupIndent);
-    }
+        "  \xE2\x80\xA2 System Audio: everything the speakers play.\n"
+        "  \xE2\x80\xA2 Game Audio Only: just this game (Win10 22H2+).\n"
+        "  \xE2\x80\xA2 None: turn analysis off.");
 }
 
 // ---- Levels -------------------------------------------------------------
@@ -883,7 +868,7 @@ void section_integrations(config::Settings& cfg, bool& dirty,
 // ---- Settings (was: Settings Management) -------------------------------
 
 static void section_settings(config::Store& store, config::Settings& cfg,
-                              AudioSystem& system) {
+                              AudioSystem& system, bool& dirty) {
     section_header_only("Settings", nullptr);
 
     ImGui::Columns(3, "##settings_buttons", false);
@@ -904,6 +889,9 @@ static void section_settings(config::Store& store, config::Settings& cfg,
         system.switch_source(cfg.audio.capture_source_code);
     }
     tip("Stop and restart the active source. Use this after changing the FFT size or band count.");
+
+    if (ImGui::Checkbox("Debug logging", &cfg.debug.debug_logging)) dirty = true;
+    tip("Verbose log to listeningway.log next to the addon.\nTechnical: debug.debug_logging");
 
     ImGui::TextDisabled("Config file: %s", store.path().u8string().c_str());
 }
@@ -929,7 +917,7 @@ void draw_overlay(reshade::api::effect_runtime*,
     section_advanced(snap, cfg, dirty);
     section_integrations(cfg, dirty, consumers);
     section_performance(snap);
-    section_settings(store, cfg, system);
+    section_settings(store, cfg, system, dirty);
 
     if (dirty) {
         store.publish(cfg);
