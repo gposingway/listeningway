@@ -199,6 +199,35 @@ void cursor_to_right_for(float label_w_with_padding) {
     if (right_x > ImGui::GetCursorPosX()) ImGui::SetCursorPosX(right_x);
 }
 
+// Subdued "settings ·/●" disclosure. Transparent background by default,
+// subtle white tint on hover. Closed state shows a small middle dot;
+// open state fills it in. The whole widget reads as quiet metadata until
+// the user reaches for it. Toggles `open` on click; returns the new state.
+//
+// Caller is responsible for the right-align cursor positioning and for
+// wrapping in PushID/PopID so the SmallButton's ID is unique per section.
+bool subtle_settings_toggle(bool& open) {
+    // Closed: " settings ·"   (· = U+00B7 MIDDLE DOT)
+    // Open:   " settings ●"   (● = U+25CF BLACK CIRCLE)
+    const char* label = open
+        ? "settings \xE2\x97\x8F"
+        : "settings \xC2\xB7";
+
+    const float w = ImGui::CalcTextSize(label).x
+                  + ImGui::GetStyle().FramePadding.x * 2.0f;
+    cursor_to_right_for(w);
+
+    ImGui::PushStyleColor(ImGuiCol_Button,        ImVec4(0, 0, 0, 0));
+    ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(1, 1, 1, 0.08f));
+    ImGui::PushStyleColor(ImGuiCol_ButtonActive,  ImVec4(1, 1, 1, 0.16f));
+    ImGui::PushStyleColor(ImGuiCol_Text,
+                          ImGui::GetStyleColorVec4(ImGuiCol_TextDisabled));
+    const bool clicked = ImGui::SmallButton(label);
+    ImGui::PopStyleColor(4);
+    if (clicked) open = !open;
+    return open;
+}
+
 // Render a section header with optional dim hint and a right-aligned
 // Settings disclosure. Returns the disclosure's open/closed state.
 // `id` MUST be unique per section (used for ImGui state storage).
@@ -217,15 +246,8 @@ bool section_header_with_settings(const char* title, const char* hint, const cha
     ImGuiStorage* storage = ImGui::GetStateStorage();
     const ImGuiID state_key = ImGui::GetID("settings_open");
     bool open = storage->GetBool(state_key, false);
-
-    char label[32];
-    std::snprintf(label, sizeof(label), "%s Settings", open ? "v" : ">");
-    const float w = ImGui::CalcTextSize(label).x + ImGui::GetStyle().FramePadding.x * 2.0f;
-    cursor_to_right_for(w);
-    if (ImGui::SmallButton(label)) {
-        open = !open;
-        storage->SetBool(state_key, open);
-    }
+    subtle_settings_toggle(open);
+    storage->SetBool(state_key, open);
 
     ImGui::Separator();
     ImGui::PopID();
@@ -307,14 +329,8 @@ bool integration_row(const char* name, bool& enabled, bool& dirty,
     ImGuiStorage* storage = ImGui::GetStateStorage();
     const ImGuiID state_key = ImGui::GetID("settings_open");
     bool open = storage->GetBool(state_key, false);
-    char label[32];
-    std::snprintf(label, sizeof(label), "%s Settings", open ? "v" : ">");
-    const float w = ImGui::CalcTextSize(label).x + ImGui::GetStyle().FramePadding.x * 2.0f;
-    cursor_to_right_for(w);
-    if (ImGui::SmallButton(label)) {
-        open = !open;
-        storage->SetBool(state_key, open);
-    }
+    subtle_settings_toggle(open);
+    storage->SetBool(state_key, open);
 
     ImGui::Unindent(overlay_style::kSubGroupIndent);
     ImGui::PopID();
