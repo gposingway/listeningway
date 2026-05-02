@@ -1,16 +1,17 @@
 // ---------------------------------------------
-// v2 overlay.
+// v2 overlay — UX-pass edition.
 //
 // Layout philosophy:
-//   - Each "block" with both visuals AND settings shows the visuals
-//     unconditionally; the settings are tucked behind a collapsed-by-default
-//     `Settings` TreeNode inside the block. Even with everything closed, the
-//     visual dashboard is intact.
-//   - Every interactive row passes through one helper layer that aligns
-//     labels to a global pixel column, so meters and sliders line up
-//     across the entire window.
-//   - Custom thin bars are vertically centered within FrameHeight rows so
-//     they sit on the same baseline as text and ImGui sliders.
+//   - Each section's header carries the title plus a live hint (e.g.
+//     "Spectrum (64 bands)" or "Beat (128 BPM)") and, when the section
+//     has settings, a right-aligned "Settings" toggle on the same line.
+//     One line of header instead of three; live data where you'd glance.
+//   - Visual content (meters, bars, rose) is always shown. Only the
+//     tunable knobs hide behind the Settings disclosure.
+//   - Engineer-only knobs hide further behind an "Advanced" sub-disclosure
+//     so newcomers see only the four or five settings they actually want.
+//   - Tooltips lead with what the control DOES; technical name and units
+//     live in a "Technical:" footer at the bottom of the tooltip.
 // ---------------------------------------------
 #define IMGUI_DISABLE_INCLUDE_IMCONFIG_H
 #define ImTextureID ImU64
@@ -26,6 +27,7 @@
 #include <numbers>
 #include <span>
 #include <string>
+#include <string_view>
 #include <vector>
 
 #include "../audio/pipeline/audio_system.h"
@@ -46,31 +48,29 @@ constexpr ImU32 kColorBg            = IM_COL32(40, 40, 40, 128);
 constexpr ImU32 kColorOutline       = IM_COL32(60, 60, 60, 128);
 constexpr ImU32 kColorCenterMarker  = IM_COL32(255, 255, 255, 180);
 constexpr ImU32 kColorProfiler      = IM_COL32(120, 200, 255, 200);
+
+constexpr ImU32 kColorIntegrationOn        = IM_COL32(60, 160, 75, 255);
+constexpr ImU32 kColorIntegrationOnHover   = IM_COL32(80, 190, 95, 255);
+constexpr ImU32 kColorIntegrationOnActive  = IM_COL32(50, 140, 65, 255);
 }  // namespace overlay_style
 
 namespace {
 
-float g_label_col = 0.0f;       ///< pixel X (window-relative) where meters/widgets start
-float g_value_col_w = 0.0f;     ///< reserved width for the right-side value text
+float g_label_col = 0.0f;
+float g_value_col_w = 0.0f;
 
-// One-time-per-draw setup of the alignment columns. Computes from the widest
-// label string we know we'll print so every section uses the same layout.
 void compute_columns() {
-    // Use a known-long label for sizing so all rows align even when only a
-    // subset is rendered. We pick the actual longest used label below.
     const char* probes[] = {
         "Threshold window (ms):",
-        "Tempo prior \xCF\x83 (oct):",   // UTF-8 σ
+        "Auto-leveled treble:",
         "Direction Boost:",
         "Volume:",
     };
     float widest = 0.0f;
-    for (const char* p : probes) {
-        widest = std::max(widest, ImGui::CalcTextSize(p).x);
-    }
+    for (const char* p : probes) widest = std::max(widest, ImGui::CalcTextSize(p).x);
     const float spacing = ImGui::GetStyle().ItemSpacing.x;
     g_label_col   = ImGui::GetCursorPosX() + widest + spacing * 2.0f;
-    g_value_col_w = ImGui::CalcTextSize("99.99 \xC2\xB5s").x + spacing;  // µs leaves room for profiler
+    g_value_col_w = ImGui::CalcTextSize("99.99 \xC2\xB5s").x + spacing;
 }
 
 void tip(const char* text) {
@@ -79,16 +79,13 @@ void tip(const char* text) {
     }
 }
 
-// Position cursor at label_col, after writing the label flush-left.
 void label_left(const char* label) {
     ImGui::AlignTextToFramePadding();
     ImGui::TextUnformatted(label);
     ImGui::SameLine(g_label_col);
 }
 
-// ---- Row helpers ---------------------------------------------------------
-// All rows occupy exactly FrameHeight vertical space, so meters, sliders,
-// combos, and text rows visually align row-to-row.
+// ---- Row helpers (unchanged semantics) ---------------------------------
 
 void meter_row(const char* label, float value, ImU32 fill,
                const char* value_fmt = "%.2f") {
@@ -96,8 +93,6 @@ void meter_row(const char* label, float value, ImU32 fill,
     label_left(label);
     const float frame_h = ImGui::GetFrameHeight();
     const float spacing = ImGui::GetStyle().ItemSpacing.x;
-    // Always reserve the value column so rows align even when this row has
-    // no built-in value text — caller may use SameLine+Text to fill it.
     const float val_w  = g_value_col_w;
     const float bar_w  = std::max(8.0f, ImGui::GetContentRegionAvail().x - val_w - spacing);
 
@@ -188,14 +183,6 @@ bool combo_row(const char* label, int* sel,
     return changed;
 }
 
-bool checkbox_row(const char* label, bool* v, const char* tooltip = nullptr) {
-    label_left(label);
-    char id[40]; std::snprintf(id, sizeof(id), "##cb_%s", label);
-    bool changed = ImGui::Checkbox(id, v);
-    if (tooltip) tip(tooltip);
-    return changed;
-}
-
 void info_row(const char* label, const char* fmt, ...) {
     label_left(label);
     va_list ap; va_start(ap, fmt);
@@ -203,7 +190,138 @@ void info_row(const char* label, const char* fmt, ...) {
     va_end(ap);
 }
 
-// ---- Common building blocks ---------------------------------------------
+// ---- Section header helpers --------------------------------------------
+
+// Right-align cursor for a label of given pixel width.
+void cursor_to_right_for(float label_w_with_padding) {
+    const float right_x = ImGui::GetWindowContentRegionMax().x - label_w_with_padding;
+    ImGui::SameLine();
+    if (right_x > ImGui::GetCursorPosX()) ImGui::SetCursorPosX(right_x);
+}
+
+// Render a section header with optional dim hint and a right-aligned
+// Settings disclosure. Returns the disclosure's open/closed state.
+// `id` MUST be unique per section (used for ImGui state storage).
+bool section_header_with_settings(const char* title, const char* hint, const char* id) {
+    ImGui::PushID(id);
+    ImGui::Spacing();
+
+    ImGui::AlignTextToFramePadding();
+    ImGui::TextUnformatted(title);
+    if (hint && hint[0]) {
+        ImGui::SameLine();
+        ImGui::AlignTextToFramePadding();
+        ImGui::TextDisabled("(%s)", hint);
+    }
+
+    ImGuiStorage* storage = ImGui::GetStateStorage();
+    const ImGuiID state_key = ImGui::GetID("settings_open");
+    bool open = storage->GetBool(state_key, false);
+
+    char label[32];
+    std::snprintf(label, sizeof(label), "%s Settings", open ? "v" : ">");
+    const float w = ImGui::CalcTextSize(label).x + ImGui::GetStyle().FramePadding.x * 2.0f;
+    cursor_to_right_for(w);
+    if (ImGui::SmallButton(label)) {
+        open = !open;
+        storage->SetBool(state_key, open);
+    }
+
+    ImGui::Separator();
+    ImGui::PopID();
+    return open;
+}
+
+// Section header for sections that don't carry per-section settings
+// (Performance, Integrations — Integrations has per-row settings instead).
+void section_header_only(const char* title, const char* hint) {
+    ImGui::Spacing();
+    ImGui::AlignTextToFramePadding();
+    ImGui::TextUnformatted(title);
+    if (hint && hint[0]) {
+        ImGui::SameLine();
+        ImGui::AlignTextToFramePadding();
+        ImGui::TextDisabled("(%s)", hint);
+    }
+    ImGui::Separator();
+}
+
+// Sub-group label inside a section.
+void subgroup_label(const char* label) {
+    ImGui::Spacing();
+    ImGui::TextDisabled("%s", label);
+}
+
+// "Advanced" sub-disclosure inside a section's settings drop-down.
+// Returns the open state. `id` must be unique per call site.
+bool advanced_subtree(const char* id) {
+    char node_id[64];
+    std::snprintf(node_id, sizeof(node_id), "Advanced##%s", id);
+    ImGui::PushStyleColor(ImGuiCol_Text, ImGui::GetStyleColorVec4(ImGuiCol_TextDisabled));
+    const bool open = ImGui::TreeNodeEx(node_id,
+        ImGuiTreeNodeFlags_SpanAvailWidth | ImGuiTreeNodeFlags_NoTreePushOnOpen);
+    ImGui::PopStyleColor();
+    if (ImGui::IsItemHovered()) {
+        ImGui::SetTooltip("Engineering knobs. Defaults work for most music; only touch if you know what you're doing.");
+    }
+    return open;
+}
+
+// ---- Integration row (Integrations section) ----------------------------
+
+// Renders one integration: [Name] toggle button, status text, right-aligned
+// Settings disclosure. Returns true if per-integration settings should be
+// drawn below the row. The toggle button is highlighted when enabled.
+bool integration_row(const char* name, bool& enabled, bool& dirty,
+                     std::string_view status, const char* id) {
+    ImGui::PushID(id);
+    ImGui::Indent(overlay_style::kSubGroupIndent);
+
+    char btn_label[40];
+    std::snprintf(btn_label, sizeof(btn_label), "[ %s ]", name);
+
+    if (enabled) {
+        ImGui::PushStyleColor(ImGuiCol_Button,        overlay_style::kColorIntegrationOn);
+        ImGui::PushStyleColor(ImGuiCol_ButtonHovered, overlay_style::kColorIntegrationOnHover);
+        ImGui::PushStyleColor(ImGuiCol_ButtonActive,  overlay_style::kColorIntegrationOnActive);
+    }
+    if (ImGui::Button(btn_label)) {
+        enabled = !enabled;
+        dirty = true;
+    }
+    if (enabled) ImGui::PopStyleColor(3);
+    if (ImGui::IsItemHovered()) {
+        ImGui::SetTooltip("Click to %s.", enabled ? "disable" : "enable");
+    }
+
+    ImGui::SameLine();
+    ImGui::AlignTextToFramePadding();
+    if (status.empty()) {
+        ImGui::TextDisabled("Off");
+    } else {
+        // Use std::string for null-terminated TextDisabled().
+        const std::string s(status);
+        ImGui::TextDisabled("%s", s.c_str());
+    }
+
+    ImGuiStorage* storage = ImGui::GetStateStorage();
+    const ImGuiID state_key = ImGui::GetID("settings_open");
+    bool open = storage->GetBool(state_key, false);
+    char label[32];
+    std::snprintf(label, sizeof(label), "%s Settings", open ? "v" : ">");
+    const float w = ImGui::CalcTextSize(label).x + ImGui::GetStyle().FramePadding.x * 2.0f;
+    cursor_to_right_for(w);
+    if (ImGui::SmallButton(label)) {
+        open = !open;
+        storage->SetBool(state_key, open);
+    }
+
+    ImGui::Unindent(overlay_style::kSubGroupIndent);
+    ImGui::PopID();
+    return open;
+}
+
+// ---- Common helpers -----------------------------------------------------
 
 const char* state_label(State s) {
     switch (s) {
@@ -227,7 +345,6 @@ const char* format_label(int channels) {
     }
 }
 
-// Compact stacked frequency band display with red→green gradient.
 void compact_band_bars(std::span<const float> values, float amp, float width) {
     using namespace overlay_style;
     if (values.empty() || width <= 0.0f) return;
@@ -251,40 +368,29 @@ void compact_band_bars(std::span<const float> values, float amp, float width) {
     ImGui::Dummy(ImVec2(width, bar_h * static_cast<float>(n)));
 }
 
-// Default-collapsed Settings sub-tree. Returns true if open (caller draws
-// config inside). `section_id` MUST be unique across the overlay, otherwise
-// ImGui hashes the same ID for every "Settings" node and they toggle as one.
-bool settings_subtree(const char* section_id) {
-    const ImGuiTreeNodeFlags flags =
-        ImGuiTreeNodeFlags_SpanAvailWidth | ImGuiTreeNodeFlags_NoTreePushOnOpen;
-    char id[64];
-    std::snprintf(id, sizeof(id), "Settings##%s", section_id);
-    ImGui::PushStyleColor(ImGuiCol_Text, ImGui::GetStyleColorVec4(ImGuiCol_TextDisabled));
-    const bool open = ImGui::TreeNodeEx(id, flags);
-    ImGui::PopStyleColor();
-    return open;
-}
-
-// Section title (always visible, never collapses).
-void section_title(const char* title) {
-    ImGui::SeparatorText(title);
-}
-
-// Sub-group label inside a section (e.g. "Phases:"). Items below should be
-// indented kSubGroupIndent.
-void subgroup_label(const char* label) {
-    ImGui::Spacing();
-    ImGui::TextDisabled("%s", label);
+// Build the live hint string for each section.
+const char* current_source_label(AudioSystem& system, const config::Settings& cfg) {
+    const auto sources = system.available_sources();
+    for (const auto& s : sources) {
+        if (s.code == cfg.audio.capture_source_code) return s.display.c_str();
+    }
+    return cfg.audio.capture_source_code.c_str();
 }
 
 }  // namespace
 
-// ---------------- Section: System & Source -------------------------------
+// ============================ Sections ===================================
 
-static void section_system(AudioSystem& system, config::Settings& cfg, bool& dirty) {
-    section_title("System & Source");
+// ---- Audio Source -------------------------------------------------------
 
-    info_row("State:", "%s   \xE2\x80\xA2   Listeningway v2.0.0-beta", state_label(system.state()));
+static void section_audio_source(AudioSystem& system, config::Settings& cfg, bool& dirty) {
+    using namespace overlay_style;
+    const char* current_label = current_source_label(system, cfg);
+    char header_hint[96];
+    std::snprintf(header_hint, sizeof(header_hint), "%s • %s",
+                   state_label(system.state()), current_label);
+
+    const bool show = section_header_with_settings("Audio Source", header_hint, "audio_source");
 
     const auto sources = system.available_sources();
     int current = 0;
@@ -304,103 +410,134 @@ static void section_system(AudioSystem& system, config::Settings& cfg, bool& dir
         system.switch_source(sources[sel].code);
     }
     ImGui::PopItemWidth();
-    tip("Audio capture source. 'Off' disables analysis.");
+    tip("Where Listeningway listens.\n"
+        "  • System Audio: everything the speakers play.\n"
+        "  • Game Audio Only: just this game (Win10 22H2+).\n"
+        "  • None: turn analysis off.");
 
-    if (settings_subtree("system")) {
-        ImGui::Indent(overlay_style::kSubGroupIndent);
-        if (checkbox_row("Enable SIMD (SSE/AVX)", &cfg.audio.simd_enabled,
-            "Use SIMD intrinsics in DSP stages where available."))   dirty = true;
-        if (checkbox_row("Debug logging", &cfg.debug.debug_logging,
-            "Verbose log to listeningway.log."))                     dirty = true;
-        ImGui::Unindent(overlay_style::kSubGroupIndent);
+    if (show) {
+        ImGui::Indent(kSubGroupIndent);
+        if (advanced_subtree("audio_source_adv")) {
+            ImGui::Indent(kSubGroupIndent);
+            if (ImGui::Checkbox("Enable SIMD (SSE/AVX)", &cfg.audio.simd_enabled)) dirty = true;
+            tip("Use SIMD intrinsics in DSP stages where available. v2 has no SIMD path yet — toggle is reserved for the v1.5 xsimd port.\nTechnical: audio.simd_enabled");
+            if (ImGui::Checkbox("Debug logging", &cfg.debug.debug_logging)) dirty = true;
+            tip("Verbose log to listeningway.log next to the addon.\nTechnical: debug.debug_logging");
+            ImGui::Unindent(kSubGroupIndent);
+        }
+        ImGui::Unindent(kSubGroupIndent);
     }
 }
 
-// ---------------- Section: Levels & Beat ---------------------------------
+// ---- Levels -------------------------------------------------------------
 
 static void section_levels(const AudioSnapshot& snap, config::Settings& cfg, bool& dirty) {
-    section_title("Levels");
+    using namespace overlay_style;
+    const char* fmt_label = format_label(static_cast<int>(snap.audio_format));
+    const bool show = section_header_with_settings("Levels", fmt_label, "levels");
 
     const float vol_amp = cfg.frequency.amplifier_volume;
     const ImU32 fill = ImGui::GetColorU32(ImGuiCol_PlotHistogram);
 
-    meter_row("Volume:", std::clamp(snap.volume * vol_amp, 0.0f, 1.0f), fill, "%.2f");
+    meter_row("Volume:", std::clamp(snap.volume * vol_amp, 0.0f, 1.0f), fill);
 
     subgroup_label("Stereo:");
-    ImGui::Indent(overlay_style::kSubGroupIndent);
+    ImGui::Indent(kSubGroupIndent);
     meter_row("Left:",  std::clamp(snap.volume_left  * vol_amp, 0.0f, 1.0f), fill);
     meter_row("Right:", std::clamp(snap.volume_right * vol_amp, 0.0f, 1.0f), fill);
     center_meter_row("Pan:", snap.audio_pan);
-    ImGui::Unindent(overlay_style::kSubGroupIndent);
+    ImGui::Unindent(kSubGroupIndent);
 
-    info_row("Format:", "%s (%.0f ch)", format_label(static_cast<int>(snap.audio_format)),
-             snap.audio_format);
-
-    if (settings_subtree("levels")) {
-        ImGui::Indent(overlay_style::kSubGroupIndent);
-        if (slider_row("Volume Boost", &cfg.frequency.amplifier_volume, 1.0f, 11.0f, "%.2f",
-            "Visual-only multiplier on the volume uniforms (does not affect analysis)."))
+    if (show) {
+        ImGui::Indent(kSubGroupIndent);
+        if (slider_row("Volume Boost", &cfg.frequency.amplifier_volume, 1.0f, 11.0f, "%.2f"))
             dirty = true;
-        if (slider_row("Pan Smoothing", &cfg.audio.pan_smoothing, 0.0f, 1.0f, "%.2f",
-            "Reduces pan jitter. 0 = no smoothing."))                         dirty = true;
-        if (slider_row("Pan Offset", &cfg.audio.pan_offset, -1.0f, 1.0f, "%.2f",
-            "User pan bias (-1 = full left, +1 = full right)."))             dirty = true;
-        ImGui::Unindent(overlay_style::kSubGroupIndent);
+        tip("Visual-only multiplier on the volume readouts and the listeningway_volume uniform. Doesn't change beat detection or analysis.\nTechnical: frequency.amplifier_volume, [1, 11]");
+        if (slider_row("Pan Smoothing", &cfg.audio.pan_smoothing, 0.0f, 1.0f, "%.2f"))
+            dirty = true;
+        tip("Smooths out pan jitter. 0 = instant response, 1 = very slow.\nTechnical: audio.pan_smoothing, [0, 1]");
+        if (slider_row("Pan Offset", &cfg.audio.pan_offset, -1.0f, 1.0f, "%.2f"))
+            dirty = true;
+        tip("Shifts the perceived stereo center. Useful if your room/headphones are biased.\nTechnical: audio.pan_offset, [-1, +1]");
+        ImGui::Unindent(kSubGroupIndent);
     }
 }
 
-// ---------------- Section: Beat Detection (visual + settings) -----------
+// ---- Beat Detection -----------------------------------------------------
 
 static void section_beat(const AudioSnapshot& snap, config::Settings& cfg, bool& dirty) {
     using namespace overlay_style;
-    section_title("Beat Detection");
+
+    char hint[32];
+    if (snap.tempo_detected) {
+        std::snprintf(hint, sizeof(hint), "%.0f BPM", snap.tempo_bpm);
+    } else {
+        std::snprintf(hint, sizeof(hint), "searching\xE2\x80\xA6");  // ellipsis
+    }
+    const bool show = section_header_with_settings("Beat Detection", hint, "beat");
 
     const ImU32 fill = ImGui::GetColorU32(ImGuiCol_PlotHistogram);
 
-    meter_row("Beat:",       std::clamp(snap.beat,       0.0f, 1.0f), fill, "%.2f");
-    meter_row("Beat Phase:", std::clamp(snap.beat_phase, 0.0f, 1.0f), fill, "%.2f");
+    meter_row("Beat:",          std::clamp(snap.beat,       0.0f, 1.0f), fill);
+    meter_row("Beat position:", std::clamp(snap.beat_phase, 0.0f, 1.0f), fill);
     if (snap.tempo_detected) {
         info_row("Tempo:", "%.1f BPM (%.0f%% confidence)",
                  snap.tempo_bpm, snap.tempo_confidence * 100.0f);
     } else {
         label_left("Tempo:");
-        ImGui::TextDisabled("unlocked  (%.1f BPM, %.0f%%)",
+        ImGui::TextDisabled("searching\xE2\x80\xA6 (%.1f BPM, %.0f%% confidence)",
                             snap.tempo_bpm, snap.tempo_confidence * 100.0f);
     }
 
-    if (settings_subtree("beat")) {
+    if (show) {
         ImGui::Indent(kSubGroupIndent);
-        if (slider_row("Threshold lambda", &cfg.beat.threshold_lambda, 0.0f, 1.0f, "%.3f",
-            "Aubio-formula \xCE\xBB in `median + \xCE\xBB\xC2\xB7mean` adaptive threshold.")) dirty = true;
-        if (slider_row("Threshold window (ms)", &cfg.beat.threshold_window_ms, 10.0f, 1000.0f, "%.0f",
-            "Sliding window for adaptive threshold computation.")) dirty = true;
-        if (slider_row("Refractory (ms)", &cfg.beat.refractory_ms, 5.0f, 500.0f, "%.0f",
-            "Minimum interval between detected onsets (suppresses doubles).")) dirty = true;
-        if (slider_row("Phase k_p", &cfg.beat.phase_kp, 0.0f, 1.0f, "%.3f",
-            "PLL phase-pull strength on confident detected onsets.")) dirty = true;
-        if (slider_row("Phase k_i", &cfg.beat.phase_ki, 0.0f, 0.5f, "%.4f",
-            "PLL BPM-drift correction strength.")) dirty = true;
-        if (slider_row("Tempo prior BPM", &cfg.beat.tempo_prior_bpm, 60.0f, 200.0f, "%.0f",
-            "Center of the log-Gaussian tempo prior (mitigates octave errors).")) dirty = true;
-        if (slider_row("Tempo prior \xCF\x83 (oct)", &cfg.beat.tempo_prior_sigma, 0.1f, 2.0f, "%.2f",
-            "Width of the tempo prior in octaves.")) dirty = true;
-        if (slider_row("Tempo window (s)", &cfg.beat.tempo_window_sec, 1.0f, 30.0f, "%.1f",
-            "Autocorrelation history length.")) dirty = true;
-        if (slider_row("Beat decay /s", &cfg.beat.beat_decay_per_sec, 0.1f, 10.0f, "%.2f",
-            "Decay rate for the `beat` uniform after a detected onset.")) dirty = true;
+        if (slider_row("Beat sensitivity", &cfg.beat.threshold_lambda, 0.0f, 1.0f, "%.3f"))
+            dirty = true;
+        tip("Higher = pickier (only the loudest hits register). Lower = more sensitive to subtle rhythm. Default works for most music.\nTechnical: beat.threshold_lambda, [0, 1]");
+        if (slider_row("Beat decay", &cfg.beat.beat_decay_per_sec, 0.1f, 10.0f, "%.2f"))
+            dirty = true;
+        tip("How fast the listeningway_beat uniform fades after each onset. Higher = sharper flashes.\nTechnical: beat.beat_decay_per_sec, /sec");
+
+        if (advanced_subtree("beat_adv")) {
+            ImGui::Indent(kSubGroupIndent);
+            if (slider_row("Threshold window (ms)", &cfg.beat.threshold_window_ms, 10.0f, 1000.0f, "%.0f"))
+                dirty = true;
+            tip("Sliding window for the adaptive threshold.\nTechnical: beat.threshold_window_ms");
+            if (slider_row("Refractory (ms)", &cfg.beat.refractory_ms, 5.0f, 500.0f, "%.0f"))
+                dirty = true;
+            tip("Minimum spacing between detected onsets. Suppresses double-fires.\nTechnical: beat.refractory_ms");
+            if (slider_row("PLL gain (P)", &cfg.beat.phase_kp, 0.0f, 1.0f, "%.3f"))
+                dirty = true;
+            tip("How hard the beat phase pulls toward each detected onset.\nTechnical: beat.phase_kp");
+            if (slider_row("PLL gain (I)", &cfg.beat.phase_ki, 0.0f, 0.5f, "%.4f"))
+                dirty = true;
+            tip("How fast tempo drift is corrected.\nTechnical: beat.phase_ki");
+            if (slider_row("Tempo prior (BPM)", &cfg.beat.tempo_prior_bpm, 60.0f, 200.0f, "%.0f"))
+                dirty = true;
+            tip("Center of the tempo prior. Mitigates octave errors (locking to half/double speed).\nTechnical: beat.tempo_prior_bpm");
+            if (slider_row("Tempo prior width (oct)", &cfg.beat.tempo_prior_sigma, 0.1f, 2.0f, "%.2f"))
+                dirty = true;
+            tip("Width of the tempo prior in octaves. Tighter = stronger pull toward the prior BPM.\nTechnical: beat.tempo_prior_sigma");
+            if (slider_row("Tempo window (s)", &cfg.beat.tempo_window_sec, 1.0f, 30.0f, "%.1f"))
+                dirty = true;
+            tip("Autocorrelation history length. Longer = more stable tempo, slower to adapt.\nTechnical: beat.tempo_window_sec");
+            ImGui::Unindent(kSubGroupIndent);
+        }
         ImGui::Unindent(kSubGroupIndent);
     }
 }
 
-// ---------------- Section: Frequency Bands -------------------------------
+// ---- Spectrum (was: Frequency Bands) ------------------------------------
 
-static void section_frequency(const AudioSnapshot& snap, config::Settings& cfg, bool& dirty) {
+static void section_spectrum(const AudioSnapshot& snap, config::Settings& cfg, bool& dirty) {
     using namespace overlay_style;
-    section_title("Frequency Bands");
 
     const uint32_t n = std::min<uint32_t>(snap.freq_band_count, 64);
+    char hint[24];
+    std::snprintf(hint, sizeof(hint), "%u bands", n);
+    const bool show = section_header_with_settings("Spectrum", hint, "spectrum");
+
     const float bands_amp = cfg.frequency.amplifier_bands;
-    info_row("Count:", "%u bands  (post-EQ, post-LogBoost)", n);
 
     ImGui::BeginChild("##bands_compact",
                       ImVec2(0.0f, kBarHeightThin * static_cast<float>(n) + 12.0f),
@@ -409,62 +546,70 @@ static void section_frequency(const AudioSnapshot& snap, config::Settings& cfg, 
                       bands_amp, ImGui::GetContentRegionAvail().x);
     ImGui::EndChild();
 
-    if (settings_subtree("frequency")) {
+    if (show) {
         ImGui::Indent(kSubGroupIndent);
-        if (slider_row("Bands Boost", &cfg.frequency.amplifier_bands, 1.0f, 11.0f, "%.2f",
-            "Visual-only multiplier on the bands uniforms.")) dirty = true;
-
-        subgroup_label("Band mapping:");
-        ImGui::Indent(kSubGroupIndent);
-        const char* const scales[] = {"Linear", "Log", "Mel (Slaney)"};
-        int scale = static_cast<int>(cfg.frequency.band_scale);
-        if (combo_row("Band scale", &scale, scales, 3,
-            "Mel matches perception best; Log was the v1 default; Linear is legacy.")) {
-            cfg.frequency.band_scale =
-                static_cast<config::FrequencyConfig::BandScale>(scale);
+        if (slider_row("Bands Boost", &cfg.frequency.amplifier_bands, 1.0f, 11.0f, "%.2f"))
             dirty = true;
-        }
-        if (slider_int_row("Band count", &cfg.frequency.band_count, 8, 128,
-            "Live band count published. Cap is kMaxBands.")) dirty = true;
-        if (slider_int_row("FFT size", &cfg.frequency.fft_size, 256, 8192,
-            "Power-of-two recommended. Larger = finer resolution, more CPU.")) dirty = true;
-        if (slider_row("Min freq", &cfg.frequency.min_freq, 10.0f, 500.0f, "%.0f",
-            "Lowest band edge in Hz.")) dirty = true;
-        if (slider_row("Max freq", &cfg.frequency.max_freq, 2000.0f, 22050.0f, "%.0f",
-            "Highest band edge in Hz.")) dirty = true;
-        if (slider_row("Log strength", &cfg.frequency.log_strength, 0.01f, 1.5f, "%.2f",
-            "Gain curve over band index when log scale enabled.")) dirty = true;
-        if (slider_row("Band norm", &cfg.frequency.band_norm, 0.001f, 1.0f, "%.3f",
-            "Raw-magnitude → band-amplitude scaling.")) dirty = true;
-        ImGui::Unindent(kSubGroupIndent);
+        tip("Visual-only multiplier on the spectrum readouts and the listeningway_freqbands uniform.\nTechnical: frequency.amplifier_bands, [1, 11]");
+        if (slider_row("Bass detail", &cfg.frequency.log_strength, 0.01f, 1.5f, "%.2f"))
+            dirty = true;
+        tip("Higher = more visible detail in the bass bands; lower = flatter spectrum.\nTechnical: frequency.log_strength, [0.01, 1.5]");
 
-        subgroup_label("Equalizer (5-band, Gaussian):");
+        subgroup_label("Equalizer (5-band):");
         ImGui::Indent(kSubGroupIndent);
-        const char* const eq_names[5] = {"Low (Bass)", "Low-Mid", "Mid", "Mid-High", "High (Treble)"};
+        const char* const eq_names[5] = {"Bass", "Low-Mid", "Mid", "High-Mid", "Treble"};
         for (int i = 0; i < 5; ++i) {
-            char buf[24]; std::snprintf(buf, sizeof(buf), "%s", eq_names[i]);
-            if (slider_row(buf, &cfg.frequency.equalizer_bands[i], 0.0f, 4.0f, "%.2f"))
+            if (slider_row(eq_names[i], &cfg.frequency.equalizer_bands[i], 0.0f, 4.0f, "%.2f"))
                 dirty = true;
         }
-        if (slider_row("Width", &cfg.frequency.equalizer_width, 0.05f, 0.5f, "%.2f",
-            "Gaussian σ for each EQ knob's influence.")) dirty = true;
+        if (slider_row("Equalizer width", &cfg.frequency.equalizer_width, 0.05f, 0.5f, "%.2f"))
+            dirty = true;
+        tip("Width of each EQ knob's influence (Gaussian σ).\nTechnical: frequency.equalizer_width");
         ImGui::Unindent(kSubGroupIndent);
 
+        if (advanced_subtree("spectrum_adv")) {
+            ImGui::Indent(kSubGroupIndent);
+            const char* const scales[] = {"Linear", "Log", "Mel (Slaney)"};
+            int scale = static_cast<int>(cfg.frequency.band_scale);
+            if (combo_row("Band scale", &scale, scales, 3)) {
+                cfg.frequency.band_scale =
+                    static_cast<config::FrequencyConfig::BandScale>(scale);
+                dirty = true;
+            }
+            tip("How frequencies map onto the bands.\n  • Mel: matches human pitch perception.\n  • Log: v1 default.\n  • Linear: legacy.\nTechnical: frequency.band_scale");
+
+            if (slider_int_row("Band count", &cfg.frequency.band_count, 8, 128))
+                dirty = true;
+            tip("Number of frequency bands published. Must match shader array size.\nTechnical: frequency.band_count, [8, 128]");
+            if (slider_int_row("Analysis resolution (FFT)", &cfg.frequency.fft_size, 256, 8192))
+                dirty = true;
+            tip("FFT window size. Higher = more frequency detail, more CPU. Power-of-two recommended.\nTechnical: frequency.fft_size");
+            if (slider_row("Low cutoff (Hz)", &cfg.frequency.min_freq, 10.0f, 500.0f, "%.0f"))
+                dirty = true;
+            tip("Lowest frequency included.\nTechnical: frequency.min_freq, Hz");
+            if (slider_row("High cutoff (Hz)", &cfg.frequency.max_freq, 2000.0f, 22050.0f, "%.0f"))
+                dirty = true;
+            tip("Highest frequency included.\nTechnical: frequency.max_freq, Hz");
+            if (slider_row("Magnitude scaling", &cfg.frequency.band_norm, 0.001f, 1.0f, "%.3f"))
+                dirty = true;
+            tip("Raw FFT magnitude → band amplitude scaling factor.\nTechnical: frequency.band_norm");
+            ImGui::Unindent(kSubGroupIndent);
+        }
         ImGui::Unindent(kSubGroupIndent);
     }
 }
 
-// ---------------- Section: Directional Intensity --------------------------
+// ---- Spatial (was: Directional Intensity) -------------------------------
 
-static void section_directional(const AudioSnapshot& snap, config::Settings& cfg, bool& dirty) {
+static void section_spatial(const AudioSnapshot& snap, config::Settings& cfg, bool& dirty) {
     using namespace overlay_style;
-    section_title("Directional Intensity");
+    const char* fmt_label = format_label(static_cast<int>(snap.audio_format));
+    const bool show = section_header_with_settings("Spatial", fmt_label, "spatial");
 
     const float dir_amp = cfg.frequency.amplifier_direction;
     const char* const labels[8] = { "F", "FR", "R", "BR", "B", "BL", "L", "FL" };
     const ImU32 fill = ImGui::GetColorU32(ImGuiCol_PlotHistogram);
 
-    // Rose visualization (compact, on the left).
     const float side = std::min(140.0f, ImGui::GetContentRegionAvail().x * 0.4f);
     const ImVec2 origin = ImGui::GetCursorScreenPos();
     const ImVec2 center(origin.x + side * 0.5f, origin.y + side * 0.5f);
@@ -484,7 +629,6 @@ static void section_directional(const AudioSnapshot& snap, config::Settings& cfg
     }
     ImGui::Dummy(ImVec2(side, side));
 
-    // Per-direction thin bars on the right of the rose.
     ImGui::SameLine();
     ImGui::BeginGroup();
     for (int i = 0; i < 8; ++i) {
@@ -493,94 +637,105 @@ static void section_directional(const AudioSnapshot& snap, config::Settings& cfg
     }
     ImGui::EndGroup();
 
-    if (settings_subtree("directional")) {
+    if (show) {
         ImGui::Indent(kSubGroupIndent);
         if (slider_row("Direction Boost", &cfg.frequency.amplifier_direction,
-                        1.0f, 11.0f, "%.2f",
-            "Visual-only multiplier on the directional uniforms.")) dirty = true;
+                        1.0f, 11.0f, "%.2f"))
+            dirty = true;
+        tip("Visual-only multiplier on the directional uniforms (listeningway_front, _front_right, etc.).\nTechnical: frequency.amplifier_direction, [1, 11]");
         ImGui::Unindent(kSubGroupIndent);
     }
 }
 
-// ---------------- Section: Chronotensity / AGC / Loudness ---------------
+// ---- Advanced metrics (auto-leveled, phases, perceptual) ---------------
 
-static void section_chronotensity(const AudioSnapshot& snap, config::Settings& cfg, bool& dirty) {
+static void section_advanced(const AudioSnapshot& snap, config::Settings& cfg, bool& dirty) {
     using namespace overlay_style;
-    section_title("Phases, AGC & Loudness");
+    const bool show = section_header_with_settings("Advanced", nullptr, "advanced");
 
     const ImU32 fill = ImGui::GetColorU32(ImGuiCol_PlotHistogram);
 
-    subgroup_label("Phases (chronotensity):");
+    subgroup_label("Auto-leveled (1.0 = recent average loudness):");
+    ImGui::Indent(kSubGroupIndent);
+    const float scale = 1.0f / std::max(0.1f, cfg.agc.clamp_max);
+    auto leveled_row = [&](const char* lbl, float v) {
+        meter_row(lbl, std::clamp(v * scale, 0.0f, 1.0f), fill, nullptr);
+        ImGui::SameLine();
+        ImGui::Text("%.2f", v);
+    };
+    leveled_row("Volume:", snap.volume_norm);
+    leveled_row("Bass:",   snap.bass_norm);
+    leveled_row("Mid:",    snap.mid_norm);
+    leveled_row("Treble:", snap.treb_norm);
+    ImGui::Unindent(kSubGroupIndent);
+
+    subgroup_label("Energy phases:");
     ImGui::Indent(kSubGroupIndent);
     meter_row("Volume:", snap.phase_volume, fill);
     meter_row("Bass:",   snap.phase_bass,   fill);
     meter_row("Treble:", snap.phase_treble, fill);
     ImGui::Unindent(kSubGroupIndent);
 
-    subgroup_label("AGC norm  (1.0 = recent average loudness):");
+    subgroup_label("Perceptual:");
     ImGui::Indent(kSubGroupIndent);
-    // AGC ratios live in [0, ~clamp_max]; show as 0..1 with /clamp_max scaling.
-    const float scale = 1.0f / std::max(0.1f, cfg.agc.clamp_max);
-    auto agc_row = [&](const char* lbl, float v) {
-        meter_row(lbl, std::clamp(v * scale, 0.0f, 1.0f), fill, nullptr);
-        ImGui::SameLine();
-        ImGui::Text("%.2f", v);
-    };
-    agc_row("Volume:", snap.volume_norm);
-    agc_row("Bass:",   snap.bass_norm);
-    agc_row("Mid:",    snap.mid_norm);
-    agc_row("Treble:", snap.treb_norm);
+    meter_row("Brightness:", snap.spectral_centroid, fill, "%.3f");
+    meter_row("Loudness:",   std::clamp(snap.loudness, 0.0f, 1.0f), fill, "%.2f");
     ImGui::Unindent(kSubGroupIndent);
 
-    subgroup_label("Other:");
-    ImGui::Indent(kSubGroupIndent);
-    meter_row("Spectral Centroid:", snap.spectral_centroid, fill, "%.3f");
-    meter_row("Loudness (BS.1770):",
-              std::clamp(snap.loudness, 0.0f, 1.0f), fill, "%.2f");
-    ImGui::Unindent(kSubGroupIndent);
-
-    if (settings_subtree("phases_agc")) {
+    if (show) {
         ImGui::Indent(kSubGroupIndent);
 
-        subgroup_label("Chronotensity gains:");
+        subgroup_label("Energy phases (rate per band):");
         ImGui::Indent(kSubGroupIndent);
-        if (slider_row("Volume gain", &cfg.chronotensity.gain_volume, 0.0f, 5.0f, "%.2f",
-            "How much volume_norm modulates phase_volume's rate.")) dirty = true;
-        if (slider_row("Bass gain", &cfg.chronotensity.gain_bass, 0.0f, 5.0f, "%.2f",
-            "Modulates phase_bass.")) dirty = true;
-        if (slider_row("Treble gain", &cfg.chronotensity.gain_treble, 0.0f, 5.0f, "%.2f",
-            "Modulates phase_treble.")) dirty = true;
+        if (slider_row("Volume rate", &cfg.chronotensity.gain_volume, 0.0f, 5.0f, "%.2f"))
+            dirty = true;
+        tip("How fast the volume-driven phase advances per unit of auto-leveled volume.\nTechnical: chronotensity.gain_volume");
+        if (slider_row("Bass rate", &cfg.chronotensity.gain_bass, 0.0f, 5.0f, "%.2f"))
+            dirty = true;
+        tip("Rate for the bass-driven phase.\nTechnical: chronotensity.gain_bass");
+        if (slider_row("Treble rate", &cfg.chronotensity.gain_treble, 0.0f, 5.0f, "%.2f"))
+            dirty = true;
+        tip("Rate for the treble-driven phase.\nTechnical: chronotensity.gain_treble");
         ImGui::Unindent(kSubGroupIndent);
 
-        subgroup_label("AGC:");
-        ImGui::Indent(kSubGroupIndent);
-        if (slider_row("Window (s)", &cfg.agc.window_seconds, 0.5f, 30.0f, "%.1f",
-            "Running-mean window for AGC normalization.")) dirty = true;
-        if (slider_row("Clamp max", &cfg.agc.clamp_max, 1.5f, 8.0f, "%.1f",
-            "Upper bound on the normalized ratio.")) dirty = true;
-        if (slider_row("Attack (ms)", &cfg.agc.att_attack_ms, 1.0f, 1000.0f, "%.0f",
-            "Smoothing attack for *_att uniforms.")) dirty = true;
-        if (slider_row("Release (ms)", &cfg.agc.att_release_ms, 1.0f, 5000.0f, "%.0f",
-            "Smoothing release for *_att uniforms.")) dirty = true;
-        ImGui::Unindent(kSubGroupIndent);
+        if (advanced_subtree("advanced_adv")) {
+            ImGui::Indent(kSubGroupIndent);
+            subgroup_label("Auto-leveling (AGC):");
+            ImGui::Indent(kSubGroupIndent);
+            if (slider_row("Window (s)", &cfg.agc.window_seconds, 0.5f, 30.0f, "%.1f"))
+                dirty = true;
+            tip("Running-mean window for auto-leveling.\nTechnical: agc.window_seconds");
+            if (slider_row("Clamp max", &cfg.agc.clamp_max, 1.5f, 8.0f, "%.1f"))
+                dirty = true;
+            tip("Upper bound on the auto-leveled value.\nTechnical: agc.clamp_max");
+            if (slider_row("Smoothing attack (ms)", &cfg.agc.att_attack_ms, 1.0f, 1000.0f, "%.0f"))
+                dirty = true;
+            tip("How fast the smoothed (_att) sibling rises.\nTechnical: agc.att_attack_ms");
+            if (slider_row("Smoothing release (ms)", &cfg.agc.att_release_ms, 1.0f, 5000.0f, "%.0f"))
+                dirty = true;
+            tip("How fast the smoothed sibling falls.\nTechnical: agc.att_release_ms");
+            ImGui::Unindent(kSubGroupIndent);
 
-        subgroup_label("Loudness:");
-        ImGui::Indent(kSubGroupIndent);
-        if (slider_row("Window (ms)", &cfg.loudness.window_ms, 50.0f, 3000.0f, "%.0f",
-            "K-weighted RMS window. 400 ms = BS.1770 'momentary'.")) dirty = true;
-        ImGui::Unindent(kSubGroupIndent);
-
+            subgroup_label("Loudness:");
+            ImGui::Indent(kSubGroupIndent);
+            if (slider_row("Window (ms)", &cfg.loudness.window_ms, 50.0f, 3000.0f, "%.0f"))
+                dirty = true;
+            tip("K-weighted RMS window. 400 ms = BS.1770 'momentary' loudness.\nTechnical: loudness.window_ms");
+            ImGui::Unindent(kSubGroupIndent);
+            ImGui::Unindent(kSubGroupIndent);
+        }
         ImGui::Unindent(kSubGroupIndent);
     }
 }
 
-// ---------------- Section: DSP profiler ----------------------------------
+// ---- Performance (was: DSP Profiler) -----------------------------------
 
-static void section_profiler(const AudioSnapshot& snap) {
+static void section_performance(const AudioSnapshot& snap) {
     using namespace overlay_style;
-    section_title("DSP Profiler");
 
-    info_row("Pipeline:", "%.1f \xC2\xB5s total (EMA)", snap.pipeline_micros);
+    char hint[32];
+    std::snprintf(hint, sizeof(hint), "%.1f \xC2\xB5s total", snap.pipeline_micros);
+    section_header_only("Performance", hint);
 
     if (snap.stage_count == 0) {
         ImGui::TextDisabled("(no timings yet)");
@@ -594,7 +749,6 @@ static void section_profiler(const AudioSnapshot& snap) {
     for (uint32_t i = 0; i < snap.stage_count; ++i) {
         const auto& t = snap.stage_timings[i];
         std::snprintf(buf, sizeof(buf), "%s:", t.name);
-        // Use meter_row but with profiler color and µs value formatting.
         label_left(buf);
         const float frame_h = ImGui::GetFrameHeight();
         const float spacing = ImGui::GetStyle().ItemSpacing.x;
@@ -618,16 +772,14 @@ static void section_profiler(const AudioSnapshot& snap) {
     }
 }
 
-// ---------------- Section: Network Outputs ------------------------------
+// ---- Integrations (was: Network Outputs) --------------------------------
 
 namespace {
 
-// Generic two-row "host" / "port" editor. Returns true if anything changed.
 bool host_port_rows(const char* prefix, std::string& host, int& port,
                      int port_lo, int port_hi) {
     bool changed = false;
 
-    // Host text input
     label_left("Host:");
     char host_buf[64] = {};
     std::snprintf(host_buf, sizeof(host_buf), "%s", host.c_str());
@@ -638,9 +790,8 @@ bool host_port_rows(const char* prefix, std::string& host, int& port,
         changed = true;
     }
     ImGui::PopItemWidth();
-    tip("Destination address. 127.0.0.1 = localhost; LAN/Internet addresses send data over the network.");
+    tip("Destination address. 127.0.0.1 = this machine. Anything else sends data over the network.");
 
-    // Port slider
     label_left("Port:");
     char id2[40]; std::snprintf(id2, sizeof(id2), "##port_%s", prefix);
     ImGui::PushItemWidth(-1);
@@ -653,122 +804,111 @@ bool host_port_rows(const char* prefix, std::string& host, int& port,
     return changed;
 }
 
-void section_network_outputs(config::Settings& cfg, bool& dirty,
-                              output::ConsumerRegistry& registry) {
-    section_title("Network Outputs");
+void section_integrations(config::Settings& cfg, bool& dirty,
+                            output::ConsumerRegistry& registry) {
+    using namespace overlay_style;
+
+    const int active_count =
+        (cfg.network.osc.enabled ? 1 : 0) +
+        (cfg.network.openrgb.enabled ? 1 : 0);
+    char hint[24];
+    if (active_count == 0) std::snprintf(hint, sizeof(hint), "none active");
+    else                   std::snprintf(hint, sizeof(hint), "%d active", active_count);
+    section_header_only("Integrations", hint);
 
     // ---- OSC ------------------------------------------------------------
-    if (checkbox_row("OSC enabled", &cfg.network.osc.enabled,
-        "Send-only UDP broadcaster. No port is opened on this machine. "
-        "Default destination 127.0.0.1:9000 matches TouchDesigner; "
-        "Resolume default is 7000.")) dirty = true;
+    {
+        std::string status;
+        if (auto* c = registry.find_by_id("osc")) status = c->status_line();
 
-    if (auto* c = registry.find_by_id("osc")) {
-        const auto status = c->status_line();
-        if (!status.empty()) {
-            label_left("Status:");
-            ImGui::TextDisabled("%s", status.c_str());
+        if (integration_row("OSC", cfg.network.osc.enabled, dirty,
+                             status, "osc")) {
+            ImGui::Indent(kSubGroupIndent * 2.0f);
+            ImGui::TextDisabled("Send to creative tools:\n"
+                "TouchDesigner, Resolume, Max/MSP, vvvv, MadMapper, VRChat OSC.\n"
+                "Send-only — no port is opened on this machine. Safe in any anti-cheat context.");
+            ImGui::Spacing();
+            if (host_port_rows("osc", cfg.network.osc.host, cfg.network.osc.port, 1, 65535))
+                dirty = true;
+            if (slider_int_row("Update rate (Hz)", &cfg.network.osc.rate_hz, 1, 120)) {
+                cfg.network.osc.rate_hz = std::clamp(cfg.network.osc.rate_hz, 1, 120);
+                dirty = true;
+            }
+            tip("How often to send each OSC message per second. Default 60.\nTechnical: network.osc.rate_hz, [1, 120]");
+            label_left("Test:");
+            if (ImGui::Button("Send test packet##osc", ImVec2(-1, 0))) {
+                if (auto* c = registry.find_by_id("osc")) c->send_test_packet();
+            }
+            tip("Sends a single /listeningway/test message. Use samples/integration_harness.py to verify reception.");
+            ImGui::Unindent(kSubGroupIndent * 2.0f);
         }
-    }
-
-    if (settings_subtree("osc")) {
-        ImGui::Indent(overlay_style::kSubGroupIndent);
-        ImGui::TextDisabled("%s",
-            "Sends audio analysis as OSC messages mirroring the shader "
-            "uniform tree (/listeningway/volume, /listeningway/freqbands, ...). "
-            "No listening port is opened. Safe in any anti-cheat context.");
-        ImGui::Spacing();
-        if (host_port_rows("osc", cfg.network.osc.host, cfg.network.osc.port,
-                            1, 65535)) {
-            dirty = true;
-        }
-        if (slider_int_row("Rate (Hz)", &cfg.network.osc.rate_hz, 1, 120,
-            "Send rate in messages-per-second per address. Default 60.")) {
-            cfg.network.osc.rate_hz = std::clamp(cfg.network.osc.rate_hz, 1, 120);
-            dirty = true;
-        }
-        label_left("Test:");
-        if (ImGui::Button("Send test packet##osc", ImVec2(-1, 0))) {
-            if (auto* c = registry.find_by_id("osc")) c->send_test_packet();
-        }
-        tip("Sends a single /listeningway/test  f  1.0 message. Use samples/osc_receiver.py to verify.");
-        ImGui::Unindent(overlay_style::kSubGroupIndent);
     }
 
     // ---- OpenRGB --------------------------------------------------------
-    ImGui::Spacing();
-    if (checkbox_row("OpenRGB enabled", &cfg.network.openrgb.enabled,
-        "TCP client to a running OpenRGB server (default 127.0.0.1:6742). "
-        "Drives RGB peripherals from the audio analysis. The server must "
-        "be running.")) dirty = true;
+    {
+        std::string status;
+        if (auto* c = registry.find_by_id("openrgb")) status = c->status_line();
 
-    if (auto* c = registry.find_by_id("openrgb")) {
-        const auto status = c->status_line();
-        if (!status.empty()) {
-            label_left("Status:");
-            ImGui::TextDisabled("%s", status.c_str());
+        if (integration_row("OpenRGB", cfg.network.openrgb.enabled, dirty,
+                             status, "openrgb")) {
+            ImGui::Indent(kSubGroupIndent * 2.0f);
+            ImGui::TextDisabled("Drive RGB peripherals:\n"
+                "Connects to a running OpenRGB server to light up keyboards,\n"
+                "mice, RAM, fans, and case strips along with your music.\n"
+                "Client-only — no port is opened on this machine.");
+            ImGui::Spacing();
+            if (host_port_rows("openrgb", cfg.network.openrgb.host,
+                                cfg.network.openrgb.port, 1, 65535))
+                dirty = true;
+            if (slider_int_row("Update rate (Hz)", &cfg.network.openrgb.rate_hz, 5, 60)) {
+                cfg.network.openrgb.rate_hz = std::clamp(cfg.network.openrgb.rate_hz, 5, 60);
+                dirty = true;
+            }
+            tip("Frame rate. Default 30. The OpenRGB server has known CPU issues above ~60 Hz.\nTechnical: network.openrgb.rate_hz, [5, 60]");
+            if (slider_row("Brightness", &cfg.network.openrgb.brightness, 0.0f, 1.0f, "%.2f"))
+                dirty = true;
+            tip("Global multiplier on output color intensity (0..1).\nTechnical: network.openrgb.brightness");
+            label_left("Test:");
+            if (ImGui::Button("Flash all LEDs##openrgb", ImVec2(-1, 0))) {
+                if (auto* c = registry.find_by_id("openrgb")) c->send_test_packet();
+            }
+            tip("Connects briefly and flashes every LED to white for one frame. Verifies the server is reachable and devices respond.");
+            ImGui::Unindent(kSubGroupIndent * 2.0f);
         }
-    }
-
-    if (settings_subtree("openrgb")) {
-        ImGui::Indent(overlay_style::kSubGroupIndent);
-        ImGui::TextDisabled("%s",
-            "Connects as a client to your OpenRGB server. We are the "
-            "client; no listening port is opened on this machine. Safe in "
-            "any anti-cheat context.");
-        ImGui::Spacing();
-        if (host_port_rows("openrgb", cfg.network.openrgb.host,
-                            cfg.network.openrgb.port, 1, 65535)) {
-            dirty = true;
-        }
-        if (slider_int_row("Rate (Hz)", &cfg.network.openrgb.rate_hz, 5, 60,
-            "Frame rate. Default 30. The OpenRGB server has CPU-wake-up "
-            "issues above ~60 Hz.")) {
-            cfg.network.openrgb.rate_hz = std::clamp(cfg.network.openrgb.rate_hz, 5, 60);
-            dirty = true;
-        }
-        if (slider_row("Brightness", &cfg.network.openrgb.brightness, 0.0f, 1.0f, "%.2f",
-            "Global multiplier on output color intensity (0..1).")) {
-            dirty = true;
-        }
-        label_left("Test:");
-        if (ImGui::Button("Flash all LEDs##openrgb", ImVec2(-1, 0))) {
-            if (auto* c = registry.find_by_id("openrgb")) c->send_test_packet();
-        }
-        tip("Connects briefly and flashes all LEDs to white for one frame. "
-            "Verifies the server is reachable and devices respond.");
-        ImGui::Unindent(overlay_style::kSubGroupIndent);
     }
 }
 
 }  // namespace
 
-// ---------------- Section: Settings management ---------------------------
+// ---- Settings (was: Settings Management) -------------------------------
 
-static void section_settings_mgmt(config::Store& store, config::Settings& cfg,
-                                   AudioSystem& system) {
-    section_title("Settings Management");
+static void section_settings(config::Store& store, config::Settings& cfg,
+                              AudioSystem& system) {
+    section_header_only("Settings", nullptr);
 
     ImGui::Columns(3, "##settings_buttons", false);
-    if (ImGui::Button("Save to disk", ImVec2(-1, 0)))    store.save();
+    if (ImGui::Button("Save", ImVec2(-1, 0))) store.save();
+    tip("Save current settings to Listeningway.json (next to the addon).");
     ImGui::NextColumn();
-    if (ImGui::Button("Reload from disk", ImVec2(-1, 0))) store.load();
+    if (ImGui::Button("Load", ImVec2(-1, 0))) store.load();
+    tip("Reload Listeningway.json from disk. Discards any unsaved changes.");
     ImGui::NextColumn();
-    if (ImGui::Button("Reset to defaults", ImVec2(-1, 0))) {
+    if (ImGui::Button("Reset", ImVec2(-1, 0))) {
         store.publish(config::Settings{});
         store.save();
     }
+    tip("Reset all settings to defaults and save.");
     ImGui::Columns(1);
 
     if (ImGui::Button("Restart audio pipeline", ImVec2(-1, 0))) {
         system.switch_source(cfg.audio.capture_source_code);
     }
-    tip("Stop and restart the active source (useful after FFT size or band count changes).");
+    tip("Stop and restart the active source. Use this after changing the FFT size or band count.");
 
     ImGui::TextDisabled("Config file: %s", store.path().u8string().c_str());
 }
 
-// ---------------- Top-level entry ----------------------------------------
+// ---- Top level ----------------------------------------------------------
 
 void draw_overlay(reshade::api::effect_runtime*,
                   AudioSystem& system,
@@ -781,19 +921,18 @@ void draw_overlay(reshade::api::effect_runtime*,
 
     compute_columns();
 
-    section_system(system, cfg, dirty);
+    section_audio_source(system, cfg, dirty);
     section_levels(snap, cfg, dirty);
     section_beat(snap, cfg, dirty);
-    section_frequency(snap, cfg, dirty);
-    section_directional(snap, cfg, dirty);
-    section_chronotensity(snap, cfg, dirty);
-    section_network_outputs(cfg, dirty, consumers);
-    section_profiler(snap);
-    section_settings_mgmt(store, cfg, system);
+    section_spectrum(snap, cfg, dirty);
+    section_spatial(snap, cfg, dirty);
+    section_advanced(snap, cfg, dirty);
+    section_integrations(cfg, dirty, consumers);
+    section_performance(snap);
+    section_settings(store, cfg, system);
 
     if (dirty) {
         store.publish(cfg);
-        // React to live toggle changes (network consumer enable/disable).
         consumers.on_settings_changed(system, addon_module, cfg);
     }
 }
