@@ -28,10 +28,11 @@ public:
     std::string GetProviderName() const override {
         return "System Audio (WASAPI Loopback)";
     }    bool IsAvailable() const override;
-      bool StartCapture(const Listeningway::Configuration& config, 
-                     std::atomic_bool& running, 
-                     std::thread& thread, 
-                     AudioAnalysisData& data) override;
+    bool StartCapture(const Listeningway::Configuration& config,
+                     std::atomic_bool& running,
+                     std::thread& thread,
+                     AudioAnalysisData& data,
+                     std::mutex& data_mutex) override;
 
     void StopCapture(std::atomic_bool& running, std::thread& thread) override;
 

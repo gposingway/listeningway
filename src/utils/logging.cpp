@@ -4,14 +4,15 @@
 // ---------------------------------------------
 #include "logging.h"
 #include "settings.h"
-#include "../core/thread_safety_manager.h"
 #include "../configuration/configuration_manager.h"
 #include <atomic>
 #include <fstream>
 #include <chrono>
 #include <ctime>
+#include <mutex>
 
 static std::ofstream g_log_file;
+static std::mutex g_log_mutex;
 
 // Cached debug-enabled flag, refreshed by SetDebugEnabled / config load.
 // Avoids taking the ConfigurationManager mutex on every log call from hot
@@ -26,7 +27,7 @@ void SetLogDebugEnabled(bool enabled) {
 void LogToFile(const std::string& message, LogLevel level) {
     // Always log errors, only log debug if enabled
     if (level == LogLevel::Debug && !g_log_debug_enabled.load(std::memory_order_relaxed)) return;
-    LOCK_LOGGING();
+    std::lock_guard<std::mutex> lock(g_log_mutex);
     if (g_log_file.is_open()) {
         // Get current time for timestamp
         auto now = std::chrono::system_clock::now();
@@ -43,7 +44,7 @@ void LogToFile(const std::string& message, LogLevel level) {
 
 // Opens the log file for writing (call at startup)
 void OpenLogFile(const char* /*filename*/) {
-    LOCK_LOGGING();
+    std::lock_guard<std::mutex> lock(g_log_mutex);
     if (g_log_file.is_open()) return;
     g_log_file.open(GetLogFilePath(), std::ios::out | std::ios::app);
 }
@@ -54,6 +55,6 @@ void OpenLogFile(const std::string& filename) {
 
 // Closes the log file (call at shutdown)
 void CloseLogFile() {
-    LOCK_LOGGING();
+    std::lock_guard<std::mutex> lock(g_log_mutex);
     if (g_log_file.is_open()) g_log_file.close();
 }

@@ -31,6 +31,7 @@ include_directories(
 # Add source file(s) including the resource file
 add_library(${PROJECT_NAME} SHARED
     src/core/listeningway_addon.cpp
+    src/audio/audio_pipeline.cpp src/audio/audio_pipeline.h
     src/audio/capture/audio_capture.cpp # moved from src/audio/audio_capture.cpp
     src/audio/capture/audio_capture.h
     src/audio/capture/audio_capture_manager.cpp
@@ -43,7 +44,6 @@ add_library(${PROJECT_NAME} SHARED
     src/core/overlay.cpp src/core/overlay.h
     src/core/beat_settings_panel.cpp src/core/beat_settings_panel.h
     src/audio/analysis/beat_profiles.cpp src/audio/analysis/beat_profiles.h
-    src/core/thread_safety_manager.cpp src/core/thread_safety_manager.h
     src/utils/logging.cpp src/utils/logging.h
     src/utils/debug_notes.cpp src/utils/debug_notes.h
     src/core/uniform_manager.cpp src/core/uniform_manager.h

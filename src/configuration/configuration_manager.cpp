@@ -1,9 +1,9 @@
 #include "configuration_manager.h"
 #include "logging.h"
 #include <algorithm>
-#include <set>
 #include "audio/analysis/audio_analysis.h"
-#include "audio/capture/audio_capture.h"
+#include "audio/audio_pipeline.h"
+#include "audio/capture/audio_capture_manager.h"
 #include <thread>
 #include <mutex>
 
@@ -11,7 +11,14 @@ extern AudioAnalyzer g_audio_analyzer;
 
 namespace Listeningway {
 
-// Static configuration instance
+namespace {
+
+AudioCaptureManager* CaptureManagerOrNull() {
+    return g_pipeline ? g_pipeline->CaptureManager() : nullptr;
+}
+
+} // namespace
+
 Configuration ConfigurationManager::m_config = {};
 
 ConfigurationManager& ConfigurationManager::Instance() {
@@ -48,7 +55,6 @@ bool ConfigurationManager::Load() {
         ValidateProvider();
         m_config.Validate();
     }
-    // Use the robust restart method after loading
     RestartAudioSystems();
     return loaded;
 }
@@ -57,29 +63,19 @@ void ConfigurationManager::ResetToDefaults() {
     {
         std::lock_guard<std::mutex> lock(m_mutex);
         m_config.ResetToDefaults();
-        // Always set provider code to the default after resetting
         m_config.audio.captureProviderCode = GetDefaultProviderCode();
         ValidateProvider();
-        // Set analysisEnabled based on the default provider's activates_capture
-        auto provider_code = m_config.audio.captureProviderCode;
-        auto available = EnumerateAvailableProviders();
         bool activates_capture = false;
-        for (const auto& code : available) {
-            if (code == provider_code) {
-                if (g_audio_capture_manager) {
-                    for (const auto& info : g_audio_capture_manager->GetAvailableProviderInfos()) {
-                        if (info.code == provider_code) {
-                            activates_capture = info.activates_capture;
-                            break;
-                        }
-                    }
+        if (auto* mgr = CaptureManagerOrNull()) {
+            for (const auto& info : mgr->GetAvailableProviderInfos()) {
+                if (info.code == m_config.audio.captureProviderCode) {
+                    activates_capture = info.activates_capture;
+                    break;
                 }
-                break;
             }
         }
         m_config.audio.analysisEnabled = activates_capture;
     }
-    // Use the robust restart method instead of ApplyConfigToLiveSystems
     RestartAudioSystems();
 }
 
@@ -90,8 +86,8 @@ void ConfigurationManager::EnsureValidProvider() {
 
 std::vector<std::string> ConfigurationManager::EnumerateAvailableProviders() const {
     std::vector<std::string> codes;
-    if (g_audio_capture_manager) {
-        for (const auto& info : g_audio_capture_manager->GetAvailableProviderInfos()) {
+    if (auto* mgr = CaptureManagerOrNull()) {
+        for (const auto& info : mgr->GetAvailableProviderInfos()) {
             codes.push_back(info.code);
         }
     }
@@ -99,13 +95,11 @@ std::vector<std::string> ConfigurationManager::EnumerateAvailableProviders() con
 }
 
 std::string ConfigurationManager::GetDefaultProviderCode() const {
-    // Prefer the provider flagged as is_default by AudioCaptureManager
-    if (g_audio_capture_manager) {
-        for (const auto& info : g_audio_capture_manager->GetAvailableProviderInfos()) {
+    if (auto* mgr = CaptureManagerOrNull()) {
+        for (const auto& info : mgr->GetAvailableProviderInfos()) {
             if (info.is_default) return info.code;
         }
     }
-    // Fallback: first non-off enumerated provider
     auto available = EnumerateAvailableProviders();
     for (const auto& code : available) {
         if (code != "off") return code;
@@ -116,37 +110,22 @@ std::string ConfigurationManager::GetDefaultProviderCode() const {
 void ConfigurationManager::ValidateProvider() {
     auto available = EnumerateAvailableProviders();
     auto& code = m_config.audio.captureProviderCode;
-    // If code is empty or not in available list, select default
     if (code.empty() || std::find(available.begin(), available.end(), code) == available.end()) {
-        // Select the provider with is_default flag
-        if (g_audio_capture_manager) {
-            for (const auto& info : g_audio_capture_manager->GetAvailableProviderInfos()) {
+        if (auto* mgr = CaptureManagerOrNull()) {
+            for (const auto& info : mgr->GetAvailableProviderInfos()) {
                 if (info.is_default) { code = info.code; return; }
             }
         }
-        // Fallback to first non-off
         for (const auto& c : available) { if (c != "off") { code = c; return; } }
     }
 }
 
 void ConfigurationManager::ApplyConfigToLiveSystems() {
     LOG_DEBUG("[ConfigurationManager] Applying configuration to live systems...");
-    
     try {
-        // Apply beat detection algorithm configuration
-        LOG_DEBUG("[ConfigurationManager] Setting beat detection algorithm: " + std::to_string(m_config.beat.algorithm));
         g_audio_analyzer.SetBeatDetectionAlgorithm(m_config.beat.algorithm);
-        
-        // Delegate audio system management to AudioCaptureManager
-        extern std::unique_ptr<AudioCaptureManager> g_audio_capture_manager;
-        if (g_audio_capture_manager) {
-            if (!g_audio_capture_manager->ApplyConfiguration(m_config)) {
-                LOG_ERROR("[ConfigurationManager] Failed to apply configuration to audio system");
-            }
-        } else {
-            LOG_WARNING("[ConfigurationManager] AudioCaptureManager not available, cannot apply audio configuration");
-        }
-        
+        // The pipeline owns lifecycle; no further action needed unless we want
+        // to fully restart, in which case callers should use RestartAudioSystems().
         LOG_DEBUG("[ConfigurationManager] Configuration applied successfully");
     } catch (const std::exception& ex) {
         LOG_ERROR("[ConfigurationManager] Error applying config to live systems: " + std::string(ex.what()));
@@ -157,33 +136,21 @@ void ConfigurationManager::ApplyConfigToLiveSystems() {
 
 void ConfigurationManager::RestartAudioSystems() {
     LOG_DEBUG("[ConfigurationManager] Restarting audio systems...");
-    
     try {
-        // Create a local copy of the configuration while holding the lock
         Configuration config_copy;
         {
             std::lock_guard<std::mutex> lock(m_mutex);
-            // Validate provider before restarting
             ValidateProvider();
-            // Copy the configuration for use outside the lock
             config_copy = m_config;
         }
-        
-        // Apply beat detection algorithm (this doesn't need the lock)
         g_audio_analyzer.SetBeatDetectionAlgorithm(config_copy.beat.algorithm);
-        
-        // Delegate audio system management to AudioCaptureManager
-        // This is done outside the lock to prevent deadlock
-        extern std::unique_ptr<AudioCaptureManager> g_audio_capture_manager;
-        if (g_audio_capture_manager) {
-            if (!g_audio_capture_manager->RestartAudioSystem(config_copy)) {
-                LOG_ERROR("[ConfigurationManager] Failed to restart audio system");
+        if (g_pipeline) {
+            if (!g_pipeline->Restart()) {
+                LOG_ERROR("[ConfigurationManager] Pipeline restart failed");
             }
         } else {
-            LOG_WARNING("[ConfigurationManager] AudioCaptureManager not available, cannot restart audio system");
+            LOG_DEBUG("[ConfigurationManager] Pipeline not available; skipping restart");
         }
-        
-        LOG_DEBUG("[ConfigurationManager] Audio systems restart completed successfully");
     } catch (const std::exception& ex) {
         LOG_ERROR("[ConfigurationManager] Error restarting audio systems: " + std::string(ex.what()));
     } catch (...) {
@@ -197,13 +164,11 @@ Configuration ConfigurationManager::Snapshot() {
 }
 
 ConfigurationManager::ConfigurationManager() {
-    // Attempt to load config at startup
     bool loaded = m_config.Load();
     if (!loaded) {
         LOG_WARNING("[ConfigurationManager] No config file found, using defaults.");
         m_config.ResetToDefaults();
     }
-    // Ensure provider is valid and select default if needed
     ValidateProvider();
 }
 

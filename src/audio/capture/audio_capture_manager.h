@@ -33,14 +33,12 @@ public:
     bool SetPreferredProviderByCode(const std::string& providerCode);
     AudioCaptureProviderType GetPreferredProvider() const { return preferred_provider_type_; }
     AudioCaptureProviderType GetCurrentProvider() const;
-    bool StartCapture(const Listeningway::Configuration& config, std::atomic_bool& running, std::thread& thread, AudioAnalysisData& data);
+    bool StartCapture(const Listeningway::Configuration& config, std::atomic_bool& running, std::thread& thread, AudioAnalysisData& data, std::mutex& data_mutex);
     void StopCapture(std::atomic_bool& running, std::thread& thread);
-    void CheckAndRestartCapture(const Listeningway::Configuration& config, std::atomic_bool& running, std::thread& thread, AudioAnalysisData& data);
-    bool SwitchProviderAndRestart(AudioCaptureProviderType type, const Listeningway::Configuration& config, std::atomic_bool& running, std::thread& thread, AudioAnalysisData& data);
-    bool SwitchProviderByCodeAndRestart(const std::string& providerCode, const Listeningway::Configuration& config, std::atomic_bool& running, std::thread& thread, AudioAnalysisData& data);
+    void CheckAndRestartCapture(const Listeningway::Configuration& config, std::atomic_bool& running, std::thread& thread, AudioAnalysisData& data, std::mutex& data_mutex);
+    bool SwitchProviderAndRestart(AudioCaptureProviderType type, const Listeningway::Configuration& config, std::atomic_bool& running, std::thread& thread, AudioAnalysisData& data, std::mutex& data_mutex);
+    bool SwitchProviderByCodeAndRestart(const std::string& providerCode, const Listeningway::Configuration& config, std::atomic_bool& running, std::thread& thread, AudioAnalysisData& data, std::mutex& data_mutex);
     std::vector<AudioProviderInfo> GetAvailableProviderInfos() const;
-    bool RestartAudioSystem(const Listeningway::Configuration& config);
-    void StopAudioSystem();
     bool ApplyConfiguration(const Listeningway::Configuration& config);
 
 private:

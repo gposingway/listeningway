@@ -6,7 +6,6 @@
 #include "analysis/channel_layout.h"
 #include "../../utils/debug_notes.h"
 #include "../../utils/logging.h"
-#include "../../core/thread_safety_manager.h"
 #include <mmdeviceapi.h>
 #include <audioclient.h>
 #include <avrt.h>
@@ -119,17 +118,18 @@ void AudioCaptureProviderSystem::Uninitialize() {
     }
 }
 
-bool AudioCaptureProviderSystem::StartCapture(const Listeningway::Configuration& config, 
-                                             std::atomic_bool& running, 
-                                             std::thread& thread, 
-                                             AudioAnalysisData& data) {
+bool AudioCaptureProviderSystem::StartCapture(const Listeningway::Configuration& config,
+                                             std::atomic_bool& running,
+                                             std::thread& thread,
+                                             AudioAnalysisData& data,
+                                             std::mutex& data_mutex) {
     running = true;
     device_change_pending_ = false;
     LOG_DEBUG("[SystemAudioProvider] Starting audio capture thread.");
     if (Listeningway::ConfigurationManager::Snapshot().debug.debugEnabled) {
         DebugNotes::Add("SYS.StartCapture");
     }
-    
+
     thread = std::thread([&, config]() {
         try {
             struct WasapiResources {
@@ -675,7 +675,7 @@ bool AudioCaptureProviderSystem::StartCapture(const Listeningway::Configuration&
                                         }
                     last_inspect = nowi;
                                     }
-                                    LOCK_AUDIO_DATA();
+                                    std::lock_guard<std::mutex> _audio_lock(data_mutex);
                                     extern AudioAnalyzer g_audio_analyzer;
                                     g_audio_analyzer.AnalyzeAudioBuffer(reinterpret_cast<float*>(pData),
                                                                         numFramesAvailable,
@@ -765,7 +765,7 @@ bool AudioCaptureProviderSystem::StartCapture(const Listeningway::Configuration&
                                         }
                                         last_inspect2 = nowi2;
                                     }
-                                    LOCK_AUDIO_DATA();
+                                    std::lock_guard<std::mutex> _audio_lock(data_mutex);
                                     extern AudioAnalyzer g_audio_analyzer;
                                     g_audio_analyzer.AnalyzeAudioBuffer(tl_conv.data(),
                                                                         numFramesAvailable,

@@ -6,23 +6,21 @@
 // ---------------------------------------------
 #include "audio/capture/providers/audio_capture_provider_off.h"
 #include "audio/capture/providers/audio_capture_provider.h"
-#include "../../core/thread_safety_manager.h"
 #include <string>
 #include <thread>
 #include <chrono>
+#include <mutex>
 #include <algorithm>
 
 bool AudioCaptureProviderOff::IsAvailable() const { return true; }
 bool AudioCaptureProviderOff::Initialize() { return true; }
 void AudioCaptureProviderOff::Uninitialize() {}
-bool AudioCaptureProviderOff::StartCapture(const Listeningway::Configuration& config, std::atomic_bool& running, std::thread& thread, AudioAnalysisData& data) {
-    // Keep the thread running but provide dummy/zero data
+bool AudioCaptureProviderOff::StartCapture(const Listeningway::Configuration& config, std::atomic_bool& running, std::thread& thread, AudioAnalysisData& data, std::mutex& data_mutex) {
     running = true;
     thread = std::thread([&, config]() {
         while (running.load()) {
-            // Provide zero/dummy audio data
             {
-                LOCK_AUDIO_DATA();
+                std::lock_guard<std::mutex> lock(data_mutex);
                 data.volume = 0.0f;
                 std::fill(data.freq_bands.begin(), data.freq_bands.end(), 0.0f);
                 data.beat = 0.0f;
@@ -35,7 +33,6 @@ bool AudioCaptureProviderOff::StartCapture(const Listeningway::Configuration& co
                 data.audio_pan = 0.0f;
                 data.audio_format = 0.0f;
             }
-            // Sleep to avoid busy waiting
             std::this_thread::sleep_for(std::chrono::milliseconds(50));
         }
     });

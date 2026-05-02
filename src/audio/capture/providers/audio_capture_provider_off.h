@@ -11,7 +11,7 @@ public:
     bool IsAvailable() const override;
     bool Initialize() override;
     void Uninitialize() override;
-    bool StartCapture(const Listeningway::Configuration& config, std::atomic_bool& running, std::thread& thread, AudioAnalysisData&) override;
+    bool StartCapture(const Listeningway::Configuration& config, std::atomic_bool& running, std::thread& thread, AudioAnalysisData&, std::mutex&) override;
     void StopCapture(std::atomic_bool& running, std::thread& thread) override;
     AudioProviderInfo GetProviderInfo() const override;
     AudioCaptureProviderType GetProviderType() const override;

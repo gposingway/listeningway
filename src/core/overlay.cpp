@@ -12,7 +12,6 @@
 #include "audio_format_utils.h"
 #include "settings.h"
 #include "logging.h"
-#include "thread_safety_manager.h"
 #include "audio/capture/audio_capture.h"
 #include "configuration/configuration_manager.h"
 #include "beat_settings_panel.h"
@@ -25,10 +24,6 @@ using Listeningway::ConfigurationManager;
 #include <cmath>
 #include <algorithm> // For std::clamp
 
-// External declarations for global variables used in overlay
-extern std::atomic_bool g_switching_provider;
-
-// Declare SwitchAudioProvider for use in overlay.cpp
 extern "C" bool SwitchAudioProvider(int providerType, int timeout_ms = 2000);
 
 // Static reference to avoid repeated Instance() calls - safe since ConfigurationManager is a singleton
@@ -666,7 +661,6 @@ static void DrawVolumeSpatializationBeat(const AudioAnalysisData& data) {
 void DrawListeningwayDebugOverlay(const AudioAnalysisData& data) {
     try {
         ImGui::GetIO().UserData = (void*)&data;
-        LOCK_AUDIO_DATA();
     // Collapsing headers persist via ImGui .ini automatically; set defaults on first use only
         // Single-page, logically grouped layout with collapsible sections
     ImGui::SetNextItemOpen(true, ImGuiCond_FirstUseEver);

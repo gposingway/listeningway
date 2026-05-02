@@ -1,47 +1,16 @@
 #pragma once
+#include <string>
 #include <vector>
-#include <atomic>
-#include <thread>
-#include <mutex>
-#include <memory>
-#include "audio/analysis/audio_analysis.h"
-#include "audio_capture_manager.h"
-#include "../configuration/configuration_manager.h"
 
-extern std::unique_ptr<AudioCaptureManager> g_audio_capture_manager;
+#include "audio/capture/providers/audio_capture_provider.h"
 
-// Audio capture system management
-bool InitializeAudioCapture();
-void UninitializeAudioCapture();
+// Read-only facade for the audio capture subsystem. The lifecycle (start/stop,
+// provider switching, restart) is owned by Listeningway::AudioPipeline; these
+// helpers simply expose provider metadata to UI / configuration code.
 
-// Audio capture thread management
-void StartAudioCaptureThread(std::atomic_bool& running, std::thread& thread, AudioAnalysisData& data);
-void StopAudioCaptureThread(std::atomic_bool& running, std::thread& thread);
-
-// Audio device notifications (inline no-ops)
-inline void InitAudioDeviceNotification() {}
-inline void UninitAudioDeviceNotification() {}
-
-// Audio capture restart and provider management
-void CheckAndRestartAudioCapture(std::atomic_bool& running, std::thread& thread, AudioAnalysisData& data);
-bool SetAudioCaptureProvider(int providerType);
-int GetAudioCaptureProvider();
-
-/**
- * @brief Gets available audio capture providers
- * @return Vector of available provider infos
- */
+/// Returns metadata for every registered, available capture provider.
 std::vector<AudioProviderInfo> GetAvailableAudioCaptureProviders();
 
-/**
- * @brief Gets the name of an audio capture provider by code
- * @param providerCode Provider code string
- * @return Human-readable provider name
- */
+/// Returns the human-readable name of the provider with the given code,
+/// or "Unknown" if no such provider is registered.
 std::string GetAudioCaptureProviderName(const std::string& providerCode);
-
-// Overlay API: Switch provider and restart capture thread if running
-bool SwitchAudioCaptureProviderAndRestart(int providerType, std::atomic_bool& running, std::thread& thread, AudioAnalysisData& data);
-
-// Overlay API: Switch provider by code and restart capture thread if running
-bool SwitchAudioCaptureProviderByCodeAndRestart(const std::string& providerCode, std::atomic_bool& running, std::thread& thread, AudioAnalysisData& data);

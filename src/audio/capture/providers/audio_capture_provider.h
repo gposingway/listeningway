@@ -59,13 +59,14 @@ public:
      * @param running Atomic flag to control thread lifetime
      * @param thread Thread object (will be started)
      * @param data Analysis data to be updated by the thread
+     * @param data_mutex Mutex protecting `data` (must outlive the thread)
      * @return true if capture started successfully
-     * @note Audio data synchronization is handled internally via ThreadSafetyManager
      */
-    virtual bool StartCapture(const Listeningway::Configuration& config, 
-                             std::atomic_bool& running, 
-                             std::thread& thread, 
-                             AudioAnalysisData& data) = 0;
+    virtual bool StartCapture(const Listeningway::Configuration& config,
+                             std::atomic_bool& running,
+                             std::thread& thread,
+                             AudioAnalysisData& data,
+                             std::mutex& data_mutex) = 0;
 
     /**
      * @brief Stops the audio capture thread
