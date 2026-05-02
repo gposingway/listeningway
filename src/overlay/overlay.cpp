@@ -466,8 +466,12 @@ ImU32 band_color(float t, int alpha = 255) {
 // interpolated between band amplitudes, producing a smooth-looking shape at
 // 64+ bands without explicit spline math. Per-band hue gradient gives the
 // spectrum its identity. Peak-hold trace is drawn as a thin polyline above
-// the live fill. Frequency-axis anchor labels (30 Hz / 200 Hz / 1 kHz / 5
-// kHz / 20 kHz) sit just inside the bottom edge with reduced alpha.
+// the live fill.
+//
+// Frequency-axis anchor labels (30 / 200 / 1k / 5k / 20k Hz) sit at the top
+// of the pane. A faint solid vertical guide line drops from each label down
+// to the baseline. The guide draws BEFORE the spectrum fill so the live
+// shape covers it where loud and it shows through where quiet.
 void render_spectrum_horizontal(std::span<const float> values, float amp,
                                   ImVec2 size,
                                   config::FrequencyConfig::BandScale scale,
@@ -491,14 +495,38 @@ void render_spectrum_horizontal(std::span<const float> values, float amp,
         return;
     }
 
+    // Reserve a small strip at the top for the frequency-axis labels so the
+    // shape doesn't draw over them. Labels live in [origin.y, label_band).
+    const float label_h    = ImGui::GetTextLineHeight();
+    const float label_band = origin.y + label_h + 2.0f;
+
+    // Frequency-axis anchors. Geometry is needed before the fill so the
+    // guide lines can be drawn underneath.
+    static const float kAnchors[] = { 30.0f, 200.0f, 1000.0f, 5000.0f, 20000.0f };
+    static const char* const kAnchorLabels[] = { "30", "200", "1k", "5k", "20k" };
+    const ImU32 guide_col = IM_COL32(70, 70, 70, 255);
+    const ImU32 label_col = IM_COL32(255, 255, 255, 110);
+
+    // Pass 1: vertical guide lines from the label band down to the baseline.
+    // Drawn before the live fill so the spectrum covers them when loud.
+    for (size_t i = 0; i < std::size(kAnchors); ++i) {
+        const float f = kAnchors[i];
+        if (f < min_f || f > max_f) continue;
+        const float x = origin.x + freq_to_x(f, scale, min_f, max_f, size.x);
+        dl->AddLine(ImVec2(x, label_band), ImVec2(x, br.y), guide_col, 1.0f);
+    }
+
     // Per-band X centers spread across the full width.
     auto band_x = [&](size_t i) {
         const float t = static_cast<float>(i) / static_cast<float>(n - 1);
         return origin.x + t * size.x;
     };
     const float baseline = br.y;
+    // Reserve only the label-band strip for axis labels; the spectrum can
+    // still reach the very top of the remaining area at peak amplitude.
+    const float draw_h = std::max(0.0f, baseline - label_band);
     auto band_y = [&](float v) {
-        return baseline - std::clamp(v, 0.0f, 1.0f) * size.y;
+        return baseline - std::clamp(v, 0.0f, 1.0f) * draw_h;
     };
 
     // Live fill: one convex quad per inter-band segment. Linear top edge
@@ -529,20 +557,15 @@ void render_spectrum_horizontal(std::span<const float> values, float amp,
                         IM_COL32(255, 255, 255, 110), 0, 1.0f);
     }
 
-    // Frequency-axis anchors inside the bottom edge.
-    static const float kAnchors[] = { 30.0f, 200.0f, 1000.0f, 5000.0f, 20000.0f };
-    static const char* const kAnchorLabels[] = { "30", "200", "1k", "5k", "20k" };
-    const ImU32 axis_col = IM_COL32(255, 255, 255, 90);
+    // Pass 2: frequency-axis labels at the top. Drawn after the fill so they
+    // sit over anything that might bleed into their reserved strip.
     for (size_t i = 0; i < std::size(kAnchors); ++i) {
         const float f = kAnchors[i];
         if (f < min_f || f > max_f) continue;
         const float x = origin.x + freq_to_x(f, scale, min_f, max_f, size.x);
-        // Tick mark
-        dl->AddLine(ImVec2(x, br.y - 1.0f), ImVec2(x, br.y - 5.0f), axis_col, 1.0f);
-        // Label
         const ImVec2 ts = ImGui::CalcTextSize(kAnchorLabels[i]);
         const float lx = std::clamp(x - ts.x * 0.5f, origin.x + 1.0f, br.x - ts.x - 1.0f);
-        dl->AddText(ImVec2(lx, br.y - ts.y - 1.0f), axis_col, kAnchorLabels[i]);
+        dl->AddText(ImVec2(lx, origin.y + 1.0f), label_col, kAnchorLabels[i]);
     }
 
     dl->AddRect(origin, br, kColorOutline, kBarRounding);
