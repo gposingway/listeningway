@@ -55,6 +55,13 @@ add_library(${PROJECT_NAME} SHARED
     src/audio/dsp/stages/equalizer_stage.h
     src/audio/dsp/stages/band_norm_stage.h
     src/audio/dsp/stages/spectral_centroid_stage.h
+    src/audio/dsp/stages/flux_stage.h
+    src/audio/dsp/stages/beat_stage.h
+    src/audio/dsp/stages/beat_stage.cpp
+    src/audio/dsp/stages/chronotensity_stage.h
+    src/audio/dsp/stages/pan_stage.h
+    src/audio/dsp/stages/directional_stage.h
+    src/audio/dsp/stages/loudness_stage.h
 
     # Snapshot publication (ADR-0002 layer 4)
     src/audio/snapshot/audio_snapshot.h
