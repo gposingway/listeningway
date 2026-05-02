@@ -1,13 +1,11 @@
 cmake_minimum_required(VERSION 3.21)
 
-# Honor MSVC_RUNTIME_LIBRARY target property so subprojects can pick their CRT.
 if(POLICY CMP0091)
     cmake_policy(SET CMP0091 NEW)
 endif()
 
 project(Listeningway VERSION 2.0.0 LANGUAGES CXX)
 
-# --- Language ------------------------------------------------------------
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
@@ -22,19 +20,40 @@ if(NOT RESHADE_SDK_PATH OR NOT EXISTS "${RESHADE_SDK_PATH}/reshade.hpp")
 endif()
 message(STATUS "Using ReShade SDK from: ${RESHADE_SDK_PATH}")
 
+# --- Dependencies (vcpkg manifest) --------------------------------------
+find_package(KissFFT CONFIG REQUIRED)
+find_package(nlohmann_json CONFIG REQUIRED)
+find_package(readerwriterqueue CONFIG REQUIRED)
+
 # --- The addon target ----------------------------------------------------
-# Day 0: minimal stub. Subsequent days expand src/ per ADR-0002:
-#   src/audio/source/      IAudioSource implementations
-#   src/audio/ring/        FrameRing (moodycamel-based)
-#   src/audio/dsp/         IDspStage implementations
-#   src/audio/snapshot/    SeqlockSnapshot, AudioSnapshot type
-#   src/audio/pipeline/    Pipeline + AudioSystem orchestrator
-#   src/config/            Setting<T>, Settings, Store
-#   src/output/            shader_contract.h, UniformPublisher
-#   src/overlay/           ImGui panels
 add_library(${PROJECT_NAME} SHARED
+    # Top-level entry
     src/listeningway_addon.cpp
     src/listeningway_constants.h
+
+    # Audio source layer (ADR-0002 layer 1)
+    src/audio/source/source_format.h
+    src/audio/source/i_audio_source.h
+    src/audio/source/off_source.h
+
+    # Ring buffer layer (ADR-0002 layer 2)
+    src/audio/ring/frame_ring.h
+
+    # DSP pipeline layer (ADR-0002 layer 3)
+    src/audio/dsp/analysis_frame.h
+    src/audio/dsp/i_dsp_stage.h
+    src/audio/dsp/pipeline.h
+    src/audio/dsp/pipeline.cpp
+
+    # Snapshot publication (ADR-0002 layer 4)
+    src/audio/snapshot/audio_snapshot.h
+    src/audio/snapshot/seqlock_snapshot.h
+
+    # Configuration (ADR-0004)
+    src/config/setting.h
+    src/config/settings.h
+
+    # Resource file (version info)
     assets/listeningway.rc
 )
 
@@ -46,6 +65,15 @@ target_include_directories(${PROJECT_NAME} PRIVATE
 target_compile_definitions(${PROJECT_NAME} PRIVATE
     WIN32_LEAN_AND_MEAN
     NOMINMAX
+)
+
+target_link_libraries(${PROJECT_NAME} PRIVATE
+    kissfft::kissfft-float
+    nlohmann_json::nlohmann_json
+    readerwriterqueue::readerwriterqueue
+    Ole32
+    Propsys
+    Avrt
 )
 
 if(MSVC)
@@ -61,12 +89,10 @@ if(MSVC)
 endif()
 
 # --- Tests ---------------------------------------------------------------
-# Re-enabled on Day 2+ when the first DSP stages land alongside their tests.
-# The legacy v1 test suite lives in tests.harvest/ as read-only reference.
 option(LISTENINGWAY_BUILD_TESTS "Build unit and property tests" OFF)
 if(LISTENINGWAY_BUILD_TESTS)
     enable_testing()
     add_subdirectory(tests)
 endif()
 
-message(STATUS "Configuring Listeningway v${PROJECT_VERSION} (Day 0 stub)")
+message(STATUS "Configuring Listeningway v${PROJECT_VERSION}")
