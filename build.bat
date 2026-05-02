@@ -4,7 +4,26 @@ setlocal
 set RESHADE_SDK_PATH=%CD%\third_party\reshade\include
 
 REM === Generate ListeningwayUniforms.fxh from template ===
-set NUM_BANDS=32
+REM NUM_BANDS is extracted from DEFAULT_NUM_BANDS in src\listeningway_constants.h
+REM (v2 location). It defines the compile-time size of the
+REM Listeningway_FreqBands[] array in shaders and is also the runtime
+REM default band count. The live band count the addon is currently
+REM publishing is exposed via the Listeningway_NumBands uniform so shaders
+REM iterate only populated entries.
+set CONSTANTS_H=src\listeningway_constants.h
+if not exist %CONSTANTS_H% (
+    echo Constants file %CONSTANTS_H% not found!
+    exit /b 1
+)
+set NB_TMP=%TEMP%\lw_num_bands.txt
+powershell -NoProfile -Command "$m = Get-Content '%CONSTANTS_H%' | Select-String 'constexpr\s+size_t\s+DEFAULT_NUM_BANDS\s*=\s*(\d+)' | Select-Object -First 1; if ($m) { $m.Matches.Groups[1].Value } else { '' }" > %NB_TMP%
+set /p NUM_BANDS=<%NB_TMP%
+del %NB_TMP%
+if "%NUM_BANDS%"=="" (
+    echo Could not extract DEFAULT_NUM_BANDS from %CONSTANTS_H%!
+    exit /b 1
+)
+echo Using DEFAULT_NUM_BANDS = %NUM_BANDS% from %CONSTANTS_H%
 set TEMPLATE=templates\ListeningwayUniforms.fxh.template
 set OUTPUT=assets\ListeningwayUniforms.fxh
 if exist %TEMPLATE% (
@@ -69,12 +88,18 @@ REM No DLLs to copy for static build
 
 echo --- Build, Rename, and Move Successful ---
 
-REM Check if deploy.bat exists and run it
-if exist deploy.bat (
+REM Default deploy target. Override by setting LISTENINGWAY_DEPLOY_DIR
+REM in your environment before running build.bat.
+if not defined LISTENINGWAY_DEPLOY_DIR (
+    set "LISTENINGWAY_DEPLOY_DIR=E:\Games\SquareEnix\FINAL FANTASY XIV - A Realm Reborn\game"
+)
+
+REM Auto-deploy to LISTENINGWAY_DEPLOY_DIR. deploy.bat will skip with a
+REM message if the path doesn't exist on this machine.
+if exist .\deploy.bat (
     echo.
-    echo --- Automatically deploying ---
-    call deploy.bat
+    echo --- Automatically deploying to %LISTENINGWAY_DEPLOY_DIR% ---
+    call .\deploy.bat
 )
 
 endlocal
-pause

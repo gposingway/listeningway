@@ -5,134 +5,158 @@ All notable changes to Listeningway will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [1.2.0.3] - 2025-06-07
+## [2.0.0-beta.1] — 2026-05-02
 
-### New Features
-- Added documentation files clarifying core, audio, configuration, and utility module responsibilities.
-- Introduced scaffolding for threading utilities.
-- Added `audio.panOffset` configuration parameter for user panning adjustment with smoothing support.
+Major version. Clean-room rebuild of the engine; v1 behavior is preserved
+at the shader-uniform layer. Architectural decisions are captured in the
+ADRs under [`docs/adr/`](docs/adr/).
+
+### Engine
+
+- **Clean-room rewrite** of audio capture, DSP, and uniform publication.
+  v1 source tree retired; v2 is built around a five-layer pipeline:
+  `IAudioSource → FrameRing → DSP Pipeline → AudioSnapshot → Consumers`
+  (ADR-0002).
+- **Adapter pattern at three points only** — `IAudioSource`, `IDspStage`,
+  and the beat-detector strategy (ADR-0003). Everything else is a concrete
+  type.
+- **State machine for capture lifecycle** — `Off → Starting → Running →
+  Stopping → Off | Error`. Eliminates the v1 atomic-flag race that froze
+  visuals on provider switch.
+- **Lock-free SPSC ring** between capture and DSP threads
+  (`moodycamel::ReaderWriterQueue`).
+- **Seqlock snapshot** publication of an immutable POD `AudioSnapshot`;
+  consumers read without locks.
+
+### Audio sources
+
+- **`WasapiLoopbackSource`** (default) — system loopback, with the v1
+  pinning fixes (`AUTOCONVERTPCM`, `MMCSS L"Audio"`, polling cadence
+  driven by `GetDevicePeriod`).
+- **`ProcessAudioSource`** — per-process loopback via
+  `ActivateAudioInterfaceAsync` + `PROCESS_LOOPBACK_MODE`. Captures the
+  game's audio only — Discord, browser tabs, system notifications no
+  longer bleed into the visualization. Available on Windows 10 22H2
+  (build 20348+) and Windows 11. See [ADR-0009](docs/adr/0009-process-audio-source.md).
+- **`OffSource`** — explicit "no analysis" provider; zeros the snapshot.
+
+### Configuration
+
+- **`Settings` struct + `Setting<T>` declarative bounds** — single
+  source of truth for default / min / max / persistence key / tooltip
+  per tunable (ADR-0004).
+- **`nlohmann::json` round-tripping** via intrusive macros — replaces
+  the v1 hand-rolled parser that silently dropped `frequency.minFreq` /
+  `maxFreq`.
+- **Atomic version-counter hot-reload** — DSP thread sees overlay
+  changes without restart.
+
+### Shader uniforms
+
+All v1 uniform names preserved (ADR-0005). New additions in v2:
+
+- **AGC normalization** — `volume_norm`, `bass_norm`, `mid_norm`,
+  `treb_norm`, plus `*_att` smoothed siblings.
+- **Pre-binned band reductions** — `freqbands16`, `freqbands32`.
+- **Spectral centroid** — `spectral_centroid` (brightness input).
+- **K-weighted loudness** — `loudness` (BS.1770 momentary, linear).
+- **Tempo + PLL phase** — `tempo_bpm`, `tempo_confidence`, `beat_phase`.
+- **Chronotensity phases** — `phase_volume`, `phase_bass`, `phase_treble`.
+  Robust energy-accumulator alternatives to `beat_phase` when tempo
+  isn't locked.
+- **History sources** — `volume_history[64]`, `freqbands_history[N×64]`
+  (band-major, time-ascending) for waterfall / spectrogram shaders.
+
+See [STABILITY.md](STABILITY.md) for the full registry and stability
+classification.
+
+### Overlay
+
+- Redesigned with collapsed-mode visuals + expanded-mode settings.
+- Per-stage DSP profiler (EMA-smoothed wall-clock per stage and total
+  pipeline µs).
+- All settings reachable from the overlay; changes persist atomically.
+
+### Testing
+
+- 19 GoogleTest unit tests covering audit-found bugs (Phase 3).
+- Property-based testing infrastructure via rapidcheck (ADR-0006);
+  full property coverage rolls in across v2.x.
+
+### Removed
+
+- v1 hand-rolled JSON parser.
+- `ThreadSafetyManager` / `AudioCaptureManager` / global graph state.
+- v1 SSE3 SIMD path in FFT magnitude (the `simdEnabled` toggle is gone;
+  v2 is scalar by default. xsimd path is on the v1.5 roadmap if the
+  per-stage profiler shows demand).
+- Process-specific capture provider scaffolding from v1 (replaced by
+  the new clean-room `ProcessAudioSource`).
+
+### Compatibility
+
+- **Shader uniform names**: byte-compatible with v1. Existing shaders
+  continue to work; new uniforms are additive.
+- **Configuration file format**: schema reset. v1 `Listeningway.json`
+  is **not** migrated; v2 writes a fresh file with v2 defaults on first
+  run. Re-save your tuning from the overlay.
+
+---
+
+## [1.2.0.4] — pre-v2 (rolled into 2.0.0-beta.1)
+
+Final v1 release. Subsequent v1 work was merged into the v2 rebuild.
+
+### Added (v1.2.0.4)
+- `Listeningway_NumBands` uniform — live band count.
+- `Listeningway_Direction8` and FRBL aliases — directional intensity rose.
+- Split Amplifier controls (Volume / Bands / Direction).
+- Runtime SIMD-toggle (since removed in v2).
+- SPSC ring buffer between capture and analysis (since replaced by
+  moodycamel in v2).
+- Background TempoWorker for BPM (since replaced by the v2 autocorrelation
+  + PLL beat detector).
+- Beat Profiles with a Custom option.
+
+### Fixed (v1.2.0.4)
+- Provider-switch freezes (System → Off → System).
+- Default provider selection now honors `is_default`.
+
+## [1.2.0.3] — 2025-06-07
 
 ### Refactor
-- Restructured audio and provider modules for better organization and clarity.
-- Updated include paths across the project to reflect new directory structure.
-- Removed process-specific audio capture providers and related code.
-- Removed several UI renderer components and associated files.
-- Removed the `tools/reshade` subproject and all related references.
-- Renamed and clarified audio capture provider classes for consistency.
-- Introduced `AudioCaptureManager` class to manage audio capture providers and selection.
-- Improved error handling in system audio capture provider.
-- Refined audio capture manager logic to track provider state and transitions.
+- Restructured audio and provider modules.
+- Removed process-specific audio capture providers (re-introduced as
+  `ProcessAudioSource` in v2.0).
+- Renamed and clarified audio capture provider classes.
+- Introduced `AudioCaptureManager` (since retired in v2).
 
-### Documentation
-- Updated documentation to reflect new paths for configuration files and third-party tools.
+### Bug fixes
+- Refined logarithmic gain in band calculations.
+- Pan calculation: deadzone + surround channel handling.
 
-### Chores
-- Updated version information to 1.2.0.3.
-- Adjusted build and deployment scripts to align with new directory structure and third-party dependencies.
+## [1.2.0.2] — 2025-06-05
 
-### Style
-- Improved and clarified file header comments across multiple files.
-- Replaced hardcoded UI constants with named constants for overlay elements and sliders.
-- Updated beat detector class names for clarity and consistency.
+- Centralized configuration; live application of changes to capture and
+  analysis.
+- Configuration persistence switched to JSON (v1 hand-rolled parser).
+- Audio overlay shader redesigned.
 
-### Bug Fixes
-- Refined audio analysis frequency band calculations with improved logarithmic gain application.
-- Enhanced pan calculation logic with deadzone and surround channel handling.
+## [1.2.0.0] — 2025-06-04
 
-## [1.2.0.2] - 2025-06-05
+- Amplifier slider for overlay and uniforms.
 
-### New Features
-- Centralized configuration management introduced for unified settings handling.
-- Live application of configuration changes to audio capture and analysis systems.
-- Added new configuration options for frequency bands, FFT size, normalization, and sample rate.
-- Audio system lifecycle controls added: restart, stop, and apply configuration dynamically.
+## [1.1.0] — 2025-06-02
 
-### Improvements
-- Audio analysis and capture now use thread-safe, centralized configuration snapshots.
-- Configuration persistence switched to JSON format for better portability.
-- Enhanced validation and fallback for audio capture providers.
-- Audio overlay shader redesigned with comprehensive visual audio data display.
-- Refined audio capture and analysis logic to remove legacy global settings dependencies.
+- Stereo spatialization uniforms (`VolumeLeft`, `VolumeRight`, `AudioPan`).
+- Audio format detection uniform.
+- Pan smoothing setting.
 
-### Bug Fixes
-- Improved verification of ImGui dependency to prevent partial or corrupted setups.
+## [1.1.0.2] — 2025-06-04
 
-### Chores
-- Version number updated to 1.2.0.2.
-- Resource file version info synchronized with the new version.
-- Deployment script updated to ensure shader directory exists and copy shader files with warnings.
+- Build system enforces ReShade v6.3.3 / ImGui docking match.
 
-### Refactor
-- Legacy INI-based settings replaced with modern configuration manager.
-- Updated audio module function signatures to adopt new configuration system.
-- Streamlined internal code structure for maintainability and thread safety.
-- Removed redundant configuration change notifications from UI handlers.
-- Consolidated and renamed configuration manager files to lowercase for consistency.
+## [1.0.x]
 
-## [1.2.0.0] - 2025-06-04
-
-### Added
-- **Amplifier Setting for Overlay and Uniforms**
-  - New "Amplifier" slider in the overlay UI (range: 1.0–11.0) under Pan Smooth, both full width.
-  - Multiplies all overlay visualizations and Listeningway_* uniforms (volume, beat, frequency bands, left/right volume) for enhanced visual feedback.
-  - Setting is persistent, validated, and does not affect underlying audio analysis.
-
-### Fixed
-- Overlay and uniforms now always match for all visualized values, including main volume bar.
-- Refined overlay UI: Removed duplicate/incorrect sliders, ensured proper alignment and labeling.
-
-### Technical
-- Added `amplifier` field to configuration, with validation and persistence.
-- Amplifier is only applied to overlay and uniforms, not to the analysis data.
-- Refactored overlay and uniform update logic for consistency and maintainability.
-
-## [1.1.0] - 2025-06-02
-
-### Added
-- **Stereo Spatialization Support**: New uniforms for enhanced stereo audio effects
-  - `Listeningway_VolumeLeft`: Volume level for left audio channels (0.0 to 1.0)
-  - `Listeningway_VolumeRight`: Volume level for right audio channels (0.0 to 1.0)  
-  - `Listeningway_AudioPan`: Stereo pan position (-1.0 = full left, 0.0 = center, +1.0 = full right)
-- **Audio Format Detection**: New uniform `Listeningway_AudioFormat` 
-  - Detects audio format: 0.0=none, 1.0=mono, 2.0=stereo, 6.0=5.1 surround, 8.0=7.1 surround
-  - Enables format-specific shader effects and optimizations
-- **Pan Smoothing Control**: Configurable smoothing to reduce pan calculation jitter
-  - Setting: `PanSmoothing` in Listeningway.ini (0.0 = no smoothing, higher = more smoothing)
-  - Default: 0.0 (preserves current behavior)
-  - Accessible via overlay UI for real-time adjustment
-
-### Enhanced
-- **Surround Sound Support**: Improved pan calculation for 5.1 and 7.1 audio
-  - Smart detection of effectively stereo content in surround formats
-  - Full [-1, +1] pan range for stereo content, even in surround sound modes
-- **Overlay Interface**: Added real-time display of all spatialization metrics
-  - Shows left/right volumes, pan position, and detected audio format
-  - Aligned display with existing volume and beat indicators
-
-### Technical
-- Extended `AudioAnalysisData` structure with new spatialization fields
-- Improved pan calculation algorithm with surround sound awareness
-- Added exponential moving average smoothing for pan stability
-- Updated uniform manager to expose all new audio spatialization uniforms
-
-## [1.1.0.2] - 2025-06-04
-
-### Fixed
-- Build system now enforces ReShade v6.3.3 (API 14+) and correct ImGui docking version for compatibility and stability.
-- `prepare.bat` script updated to always check out the correct ReShade tag and reset `deps/imgui` to the commit referenced by ReShade, preventing mismatched API or ImGui errors.
-- Documentation updated to clarify minimum ReShade version and AuroraShade compatibility.
-
-### Technical
-- Automated dependency management for ReShade and ImGui to match project requirements.
-
-## [1.0.x] - Previous Versions
-
-### Features
-- Real-time audio analysis with FFT processing
-- Beat detection with multiple algorithms (Simple Energy, Spectral Flux + Autocorrelation)
-- 32-band frequency analysis with logarithmic/linear mapping options
-- 5-band equalizer system for enhanced frequency visualization
-- Time-based uniforms for continuous animations
-- Comprehensive settings system with overlay UI
-- Support for System Audio and Process Audio capture
-- Thread-safe audio provider switching
+Initial public releases. Real-time FFT, beat detection, 32-band frequency
+analysis, 5-band equalizer, time uniforms, settings + overlay UI.

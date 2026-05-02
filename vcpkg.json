@@ -1,7 +1,11 @@
 {
   "name": "listeningway",
-  "version-string": "0.1.0",
+  "version-string": "2.0.0-beta.1",
   "dependencies": [
-    "kissfft"
+    "kissfft",
+    "nlohmann-json",
+    "readerwriterqueue",
+    "gtest",
+    "rapidcheck"
   ]
 }

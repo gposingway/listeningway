@@ -1,104 +1,137 @@
-cmake_minimum_required(VERSION 3.15) # vcpkg recommends at least 3.15
+cmake_minimum_required(VERSION 3.21)
 
-project(Listeningway LANGUAGES CXX)
+if(POLICY CMP0091)
+    cmake_policy(SET CMP0091 NEW)
+endif()
 
-# Set C++ standard
-set(CMAKE_CXX_STANDARD 17)
-set(CMAKE_CXX_STANDARD_REQUIRED True)
-set(CMAKE_CXX_EXTENSIONS OFF) # Prefer standard features
+project(Listeningway VERSION 2.0.0 LANGUAGES CXX)
 
-# --- ReShade SDK ---
-# Option 1: Set this variable via CMake command line or GUI
-# cmake .. -DRESHADE_SDK_PATH=third_party/reshade/include
-option(RESHADE_SDK_PATH "Path to the ReShade SDK include directory" "${CMAKE_SOURCE_DIR}/third_party/reshade/include")
+set(CMAKE_CXX_STANDARD 20)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+set(CMAKE_CXX_EXTENSIONS OFF)
+
+# --- ReShade SDK ---------------------------------------------------------
+option(RESHADE_SDK_PATH "Path to the ReShade SDK include directory"
+       "${CMAKE_SOURCE_DIR}/third_party/reshade/include")
 if(NOT RESHADE_SDK_PATH OR NOT EXISTS "${RESHADE_SDK_PATH}/reshade.hpp")
-    message(FATAL_ERROR "ReShade SDK path not found or invalid. Please set RESHADE_SDK_PATH correctly (e.g., path to the 'include' directory containing reshade.hpp). Current value: '${RESHADE_SDK_PATH}'")
+    message(FATAL_ERROR
+        "ReShade SDK path not found or invalid. Run prepare.bat first. "
+        "Current value: '${RESHADE_SDK_PATH}'")
 endif()
 message(STATUS "Using ReShade SDK from: ${RESHADE_SDK_PATH}")
-include_directories(${RESHADE_SDK_PATH})
 
-# --- Project Configuration ---
-# Add project include directories
-include_directories(
-    ${CMAKE_SOURCE_DIR}/src
-    ${CMAKE_SOURCE_DIR}/src/audio
-    ${CMAKE_SOURCE_DIR}/src/audio/beat_detection
-    ${CMAKE_SOURCE_DIR}/src/core
-    ${CMAKE_SOURCE_DIR}/src/core/configuration
-    ${CMAKE_SOURCE_DIR}/src/utils
-)
+# --- Dependencies (vcpkg manifest) --------------------------------------
+find_package(KissFFT CONFIG REQUIRED)
+find_package(nlohmann_json CONFIG REQUIRED)
+find_package(readerwriterqueue CONFIG REQUIRED)
 
-# Add source file(s) including the resource file
+# --- The addon target ----------------------------------------------------
 add_library(${PROJECT_NAME} SHARED
-    src/core/listeningway_addon.cpp
-    src/audio/capture/audio_capture.cpp # moved from src/audio/audio_capture.cpp
-    src/audio/capture/audio_capture.h
-    src/audio/capture/audio_capture_manager.cpp
-    src/audio/capture/audio_capture_manager.h
-    src/audio/analysis/audio_analysis.cpp
-    src/audio/analysis/audio_analysis.h    src/core/overlay.cpp src/core/overlay.h
-    src/core/thread_safety_manager.cpp src/core/thread_safety_manager.h
-    src/utils/logging.cpp src/utils/logging.h
-    src/core/uniform_manager.cpp src/core/uniform_manager.h
-    src/core/settings.cpp src/core/settings.h    src/configuration/configuration_manager.cpp src/configuration/configuration_manager.h
-    src/configuration/Configuration.cpp src/configuration/Configuration.h
-    src/configuration/config_value.cpp src/configuration/config_value.h
-    src/audio/capture/providers/audio_capture_provider.h
-    src/audio/capture/providers/audio_capture_provider_system.h
-    src/audio/capture/providers/audio_capture_provider_system.cpp
-    src/audio/capture/providers/audio_capture_provider_off.h
-    src/audio/capture/providers/audio_capture_provider_off.cpp
-    src/audio/beat_detection/beat_detector.cpp
-    src/audio/beat_detection/beat_detector.h
-    src/audio/beat_detection/beat_detector_simple_energy.cpp
-    src/audio/beat_detection/beat_detector_simple_energy.h
-    src/audio/beat_detection/beat_detector_spectral_flux_auto.cpp
-    src/audio/beat_detection/beat_detector_spectral_flux_auto.h
+    # Top-level entry
+    src/listeningway_addon.cpp
+    src/listeningway_constants.h
+
+    # Audio source layer
+    src/audio/source/source_format.h
+    src/audio/source/i_audio_source.h
+    src/audio/source/off_source.h
+    src/audio/source/wasapi_loopback_source.h
+    src/audio/source/wasapi_loopback_source.cpp
+    src/audio/source/process_audio_source.h
+    src/audio/source/process_audio_source.cpp
+
+    # Ring buffer layer
+    src/audio/ring/frame_ring.h
+
+    # DSP pipeline layer
+    src/audio/dsp/analysis_frame.h
+    src/audio/dsp/i_dsp_stage.h
+    src/audio/dsp/pipeline.h
+    src/audio/dsp/pipeline.cpp
+    src/audio/dsp/stage_profile.h
+    src/audio/dsp/stages/volume_stage.h
+    src/audio/dsp/stages/fft_stage.h
+    src/audio/dsp/stages/fft_stage.cpp
+    src/audio/dsp/stages/bands_stage.h
+    src/audio/dsp/stages/bands_stage.cpp
+    src/audio/dsp/stages/log_boost_stage.h
+    src/audio/dsp/stages/equalizer_stage.h
+    src/audio/dsp/stages/band_norm_stage.h
+    src/audio/dsp/stages/spectral_centroid_stage.h
+    src/audio/dsp/stages/flux_stage.h
+    src/audio/dsp/stages/beat_stage.h
+    src/audio/dsp/stages/beat_stage.cpp
+    src/audio/dsp/stages/chronotensity_stage.h
+    src/audio/dsp/stages/pan_stage.h
+    src/audio/dsp/stages/directional_stage.h
+    src/audio/dsp/stages/loudness_stage.h
+
+    # Snapshot publication
+    src/audio/snapshot/audio_snapshot.h
+    src/audio/snapshot/seqlock_snapshot.h
+
+    # Pipeline orchestrator + state machine
+    src/audio/pipeline/audio_system.h
+    src/audio/pipeline/audio_system.cpp
+
+    # Configuration
+    src/config/setting.h
+    src/config/settings.h
+    src/config/settings_json.h
+    src/config/store.h
+    src/config/store.cpp
+
+    # Output
+    src/output/shader_contract.h
+    src/output/uniform_publisher.h
+    src/output/uniform_publisher.cpp
+
+    # Overlay (ImGui)
+    src/overlay/overlay.h
+    src/overlay/overlay.cpp
+
+    # Resource file (version info)
     assets/listeningway.rc
 )
 
-# Add ImGui include directory specifically for the Listeningway target
 target_include_directories(${PROJECT_NAME} PRIVATE
+    ${RESHADE_SDK_PATH}
+    ${CMAKE_SOURCE_DIR}/src
     ${CMAKE_SOURCE_DIR}/third_party/reshade/deps/imgui
 )
 
-# --- Preprocessor Definitions ---
 target_compile_definitions(${PROJECT_NAME} PRIVATE
-    WIN32_LEAN_AND_MEAN # Exclude rarely-used stuff from Windows headers
-    NOMINMAX          # Prevent Windows headers from defining min/max macros
-    # Add other necessary definitions here
+    WIN32_LEAN_AND_MEAN
+    NOMINMAX
 )
 
-# --- Dependencies ---
-# Find vcpkg packages (requires CMAKE_TOOLCHAIN_FILE to be set)
-find_package(KissFFT CONFIG REQUIRED) # Find package without components
-
-# Link Windows Libraries needed for WASAPI/COM
-target_link_libraries(${PROJECT_NAME} PRIVATE
-    Ole32           # For COM
-    Propsys         # For IMMDeviceEnumerator property store access (safer)
-    Avrt            # For audio thread priority management (optional but good)
-    Psapi           # For process enumeration and information
-    # Add other Windows libs if needed (e.g., Winmm)
-)
-
-# Link vcpkg libraries
-# Use kissfft-float linkage
 target_link_libraries(${PROJECT_NAME} PRIVATE
     kissfft::kissfft-float
+    nlohmann_json::nlohmann_json
+    readerwriterqueue::readerwriterqueue
+    Ole32
+    Propsys
+    Avrt
+    Mmdevapi
 )
 
-# Fix LIBCMT conflict warning
 if(MSVC)
-    set_target_properties(${PROJECT_NAME} PROPERTIES LINK_FLAGS "/NODEFAULTLIB:LIBCMT")
+    target_compile_options(${PROJECT_NAME} PRIVATE
+        /W4
+        /permissive-
+        /Zc:preprocessor
+        /Zc:__cplusplus
+        /MP
+    )
+    set_target_properties(${PROJECT_NAME} PROPERTIES
+        LINK_FLAGS "/NODEFAULTLIB:LIBCMT")
 endif()
 
-# --- Output Configuration ---
-# Ensure the output DLL is named correctly (e.g., Listeningway.dll)
-# CMake usually handles this based on the project name, but you can force it:
-# set_target_properties(${PROJECT_NAME} PROPERTIES OUTPUT_NAME "Listeningway")
+# --- Tests ---------------------------------------------------------------
+option(LISTENINGWAY_BUILD_TESTS "Build unit and property tests" OFF)
+if(LISTENINGWAY_BUILD_TESTS)
+    enable_testing()
+    add_subdirectory(tests)
+endif()
 
-# Optional: Set output directory for the DLL if desired
-# set_target_properties(${PROJECT_NAME} PROPERTIES RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
-
-message(STATUS "Configuring Listeningway ReShade Addon")
+message(STATUS "Configuring Listeningway v${PROJECT_VERSION}")
