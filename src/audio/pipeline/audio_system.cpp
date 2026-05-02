@@ -221,6 +221,13 @@ void AudioSystem::dsp_thread_main() {
         snap.volume_history = volume_history_;
         snap.volume_history_head = volume_history_head_;
 
+        // Update 16-band history ring (frame-major).
+        bands_history_[bands_history_head_] = snap.freq_bands_16;
+        bands_history_head_ =
+            (bands_history_head_ + 1) % AudioSnapshot::kBandsHistoryFrames;
+        snap.freq_bands16_history = bands_history_;
+        snap.freq_bands16_history_head = bands_history_head_;
+
         snapshot_.publish(snap);
 
         ring_.recycle(std::move(chunk));

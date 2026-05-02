@@ -67,4 +67,9 @@ inline constexpr std::string_view kPhaseBass      = "listeningway_phase_bass";
 inline constexpr std::string_view kPhaseTreble    = "listeningway_phase_treble";
 inline constexpr std::string_view kVolumeHistory  = "listeningway_volume_history";
 
+// 16-band × 64-frame history. Layout in the array: band-major,
+// time-ascending (frame 0 = oldest, frame 63 = most recent). Index
+// helper: `freqbands16_history[band * 64 + frame]`.
+inline constexpr std::string_view kFreqBands16History = "listeningway_freqbands16_history";
+
 }  // namespace lw::shader_contract

@@ -21,12 +21,23 @@ void publish_uniforms(reshade::api::effect_runtime* runtime,
     const float total_60   = t * 60.0f;
     const float total_120  = t * 120.0f;
 
-    // Build a "front_left" linear-from-history view for the volume_history
-    // uniform that a shader can read in publication order (oldest..newest).
+    // Volume history: ring → linear in time order (oldest..newest).
     std::array<float, kVolumeHistoryLength> hist_linear{};
     for (size_t i = 0; i < kVolumeHistoryLength; ++i) {
         const size_t src = (snap.volume_history_head + 1 + i) % kVolumeHistoryLength;
         hist_linear[i] = snap.volume_history[src];
+    }
+
+    // 16-band history: ring of frame-major rows → flat band-major linear-time
+    // view: index `band * 64 + frame`, frame=0 oldest, frame=63 newest.
+    constexpr size_t kBHB = AudioSnapshot::kBandsHistoryBands;
+    constexpr size_t kBHF = AudioSnapshot::kBandsHistoryFrames;
+    std::array<float, kBHB * kBHF> bands_hist_linear{};
+    for (size_t f = 0; f < kBHF; ++f) {
+        const size_t src_frame = (snap.freq_bands16_history_head + 1 + f) % kBHF;
+        for (size_t b = 0; b < kBHB; ++b) {
+            bands_hist_linear[b * kBHF + f] = snap.freq_bands16_history[src_frame][b];
+        }
     }
 
     runtime->enumerate_uniform_variables(nullptr, [&](
@@ -91,6 +102,8 @@ void publish_uniforms(reshade::api::effect_runtime* runtime,
         else if (src == sc::kPhaseTreble)      write_f1(snap.phase_treble);
         else if (src == sc::kVolumeHistory)    write_f(hist_linear.data(),
                                                        kVolumeHistoryLength);
+        else if (src == sc::kFreqBands16History)
+            write_f(bands_hist_linear.data(), kBHB * kBHF);
     });
 }
 
