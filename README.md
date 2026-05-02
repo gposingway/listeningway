@@ -111,7 +111,7 @@ The overlay has a single **Audio Source** dropdown:
 - **Game Audio Only (Process Loopback)** captures the host process only, so Discord, browsers, and music apps stop bleeding into the visualization. Requires Windows 10 22H2 (build 20348+) or Windows 11; the option is grayed on older builds. Design notes in [ADR-0009](docs/adr/0009-process-audio-source.md).
 - **None (Off)** disables analysis cleanly; uniforms zero out, OSC stops sending, OpenRGB goes idle.
 
-Switching sources at runtime is safe: an explicit state machine handles the lifecycle (`Off → Starting → Running → Stopping`), so visuals don't freeze on changeover the way v1 occasionally did.
+You can change the source at any time from the overlay.
 
 ---
 
