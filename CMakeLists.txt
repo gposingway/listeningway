@@ -35,6 +35,8 @@ add_library(${PROJECT_NAME} SHARED
     src/audio/source/source_format.h
     src/audio/source/i_audio_source.h
     src/audio/source/off_source.h
+    src/audio/source/wasapi_loopback_source.h
+    src/audio/source/wasapi_loopback_source.cpp
 
     # Ring buffer layer (ADR-0002 layer 2)
     src/audio/ring/frame_ring.h
