@@ -46,6 +46,7 @@ add_library(${PROJECT_NAME} SHARED
     src/audio/dsp/i_dsp_stage.h
     src/audio/dsp/pipeline.h
     src/audio/dsp/pipeline.cpp
+    src/audio/dsp/stage_profile.h
     src/audio/dsp/stages/volume_stage.h
     src/audio/dsp/stages/fft_stage.h
     src/audio/dsp/stages/fft_stage.cpp

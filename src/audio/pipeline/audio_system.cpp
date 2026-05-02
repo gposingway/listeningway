@@ -209,6 +209,12 @@ void AudioSystem::dsp_thread_main() {
         snap.audio_pan = frame.audio_pan.value_or(0.0f);
         if (frame.direction8) snap.direction8 = *frame.direction8;
 
+        // Profiler: copy per-stage and total timings from the pipeline.
+        snap.stage_timings   = pipeline_.last_timings();
+        snap.stage_count     = static_cast<uint32_t>(
+            std::min(pipeline_.last_timing_count(), dsp::kMaxStages));
+        snap.pipeline_micros = pipeline_.last_total_micros();
+
         // Update volume history ring.
         volume_history_[volume_history_head_] = snap.volume;
         volume_history_head_ = (volume_history_head_ + 1) % kVolumeHistoryLength;

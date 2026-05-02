@@ -12,6 +12,7 @@
 #include <cstdint>
 
 #include "../../listeningway_constants.h"  // DEFAULT_NUM_BANDS
+#include "../dsp/stage_profile.h"          // StageTimings, kMaxStages
 
 namespace lw {
 
@@ -75,6 +76,11 @@ struct AudioSnapshot {
     // --- History (for waterfall/trail effects) ---
     std::array<float, kVolumeHistoryLength> volume_history{};
     uint32_t volume_history_head = 0;  // index of the most-recent sample
+
+    // --- Profiling (per-stage EMA-smoothed wall-clock) ---
+    dsp::StageTimings stage_timings{};
+    uint32_t          stage_count    = 0;
+    float             pipeline_micros = 0.0f;
 
     // --- Provenance ---
     uint64_t frame_index = 0;
