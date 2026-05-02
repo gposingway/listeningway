@@ -1,8 +1,7 @@
 // ---------------------------------------------
 // Listeningway v2 — addon entry point.
 // Owns: config Store, AudioSystem (which owns sources, ring, pipeline,
-// snapshot, DSP thread). Hooks ReShade for the per-frame uniform publish
-// and the overlay draw.
+// snapshot, DSP thread), ConsumerRegistry (which owns the output consumers).
 // ---------------------------------------------
 #define IMGUI_DISABLE_INCLUDE_IMCONFIG_H
 #define ImTextureID ImU64
@@ -10,7 +9,6 @@
 #include <reshade.hpp>
 #include <windows.h>
 
-#include <chrono>
 #include <filesystem>
 #include <memory>
 
@@ -32,8 +30,9 @@
 #include "audio/dsp/stages/directional_stage.h"
 #include "audio/dsp/stages/loudness_stage.h"
 #include "config/store.h"
-#include "output/uniform_publisher.h"
-#include "overlay/overlay.h"
+#include "output/consumer_registry.h"
+#include "output/uniform_publisher_consumer.h"
+#include "overlay/overlay_consumer.h"
 
 extern "C" __declspec(dllexport) const char* NAME = "Listeningway";
 extern "C" __declspec(dllexport) const char* DESCRIPTION =
@@ -41,9 +40,9 @@ extern "C" __declspec(dllexport) const char* DESCRIPTION =
 
 namespace {
 
-std::unique_ptr<lw::config::Store> g_store;
-std::unique_ptr<lw::AudioSystem>   g_system;
-std::chrono::steady_clock::time_point g_start_time;
+std::unique_ptr<lw::config::Store>             g_store;
+std::unique_ptr<lw::AudioSystem>               g_system;
+std::unique_ptr<lw::output::ConsumerRegistry>  g_consumers;
 HMODULE g_module_handle = nullptr;
 
 std::filesystem::path settings_path_next_to_dll() {
@@ -51,21 +50,6 @@ std::filesystem::path settings_path_next_to_dll() {
     GetModuleFileNameA(g_module_handle, buf, MAX_PATH);
     std::filesystem::path p(buf);
     return p.parent_path() / "Listeningway.json";
-}
-
-void on_reshade_begin_effects(reshade::api::effect_runtime* runtime,
-                               reshade::api::command_list*,
-                               reshade::api::resource_view,
-                               reshade::api::resource_view) {
-    if (!g_system) return;
-    const auto snap = g_system->snapshot();
-    lw::output::publish_uniforms(runtime, snap, g_start_time,
-                                  std::chrono::steady_clock::now());
-}
-
-void on_overlay(reshade::api::effect_runtime* runtime) {
-    if (!g_system || !g_store) return;
-    lw::draw_overlay(runtime, *g_system, *g_store);
 }
 
 void compose_pipeline(lw::dsp::Pipeline& p) {
@@ -86,9 +70,8 @@ void compose_pipeline(lw::dsp::Pipeline& p) {
 }
 
 bool init() {
-    g_start_time = std::chrono::steady_clock::now();
     g_store = std::make_unique<lw::config::Store>(settings_path_next_to_dll());
-    g_store->load();  // missing file → defaults are kept
+    g_store->load();
 
     g_system = std::make_unique<lw::AudioSystem>(g_store.get());
     g_system->register_source(std::make_unique<lw::source::WasapiLoopbackSource>());
@@ -97,13 +80,27 @@ bool init() {
     compose_pipeline(g_system->pipeline());
 
     if (!g_system->pipeline().validate().empty()) {
-        // Composition error — refuse to start; addon stays loaded but inert.
         return false;
     }
-    return g_system->start();
+    if (!g_system->start()) {
+        return false;
+    }
+
+    // Build the consumer registry. Internal consumers first (always-on);
+    // toggleable network consumers will be appended in subsequent phases.
+    g_consumers = std::make_unique<lw::output::ConsumerRegistry>();
+    g_consumers->add(std::make_unique<lw::output::UniformPublisherConsumer>());
+    g_consumers->add(std::make_unique<lw::overlay::OverlayConsumer>(*g_store, *g_consumers));
+
+    g_consumers->start_all(*g_system, g_module_handle, g_store->snapshot());
+    return true;
 }
 
 void shutdown() {
+    if (g_consumers) {
+        g_consumers->stop_all();
+        g_consumers.reset();
+    }
     if (g_system) {
         g_system->stop();
         g_system.reset();
@@ -123,12 +120,8 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD reason, LPVOID) {
             DisableThreadLibraryCalls(hModule);
             if (!reshade::register_addon(hModule)) return FALSE;
             init();
-            reshade::register_event<reshade::addon_event::reshade_begin_effects>(&on_reshade_begin_effects);
-            reshade::register_overlay(nullptr, &on_overlay);
             break;
         case DLL_PROCESS_DETACH:
-            reshade::unregister_overlay(nullptr, &on_overlay);
-            reshade::unregister_event<reshade::addon_event::reshade_begin_effects>(&on_reshade_begin_effects);
             shutdown();
             reshade::unregister_addon(hModule);
             break;

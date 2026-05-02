@@ -85,10 +85,17 @@ add_library(${PROJECT_NAME} SHARED
     src/output/shader_contract.h
     src/output/uniform_publisher.h
     src/output/uniform_publisher.cpp
+    src/output/i_output_consumer.h
+    src/output/consumer_registry.h
+    src/output/consumer_registry.cpp
+    src/output/uniform_publisher_consumer.h
+    src/output/uniform_publisher_consumer.cpp
 
     # Overlay (ImGui)
     src/overlay/overlay.h
     src/overlay/overlay.cpp
+    src/overlay/overlay_consumer.h
+    src/overlay/overlay_consumer.cpp
 
     # Resource file (version info)
     assets/listeningway.rc
