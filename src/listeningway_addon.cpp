@@ -23,7 +23,7 @@
 
 extern "C" __declspec(dllexport) const char* NAME = "Listeningway";
 extern "C" __declspec(dllexport) const char* DESCRIPTION =
-    "Real-time audio analysis exposed to ReShade shaders as uniforms. v2.0.0-beta.";
+    "Real-time audio analysis exposed to ReShade shaders as uniforms.";
 
 namespace {
 

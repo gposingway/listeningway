@@ -1,6 +1,6 @@
 {
   "name": "listeningway",
-  "version-string": "2.0.0-beta.1",
+  "version-string": "2.0.0-beta.2",
   "dependencies": [
     "kissfft",
     "nlohmann-json",
