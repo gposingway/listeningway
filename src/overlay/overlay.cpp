@@ -278,7 +278,7 @@ bool integration_row(const char* name, bool& enabled, bool& dirty,
     ImGui::Indent(overlay_style::kSubGroupIndent);
 
     char btn_label[40];
-    std::snprintf(btn_label, sizeof(btn_label), "[ %s ]", name);
+    std::snprintf(btn_label, sizeof(btn_label), "%s", name);
 
     if (enabled) {
         ImGui::PushStyleColor(ImGuiCol_Button,        overlay_style::kColorIntegrationOn);
