@@ -928,23 +928,18 @@ static void section_spatial(const AudioSnapshot& snap, config::Settings& cfg, bo
         dl->AddTriangleFilled(center, p0, p1, fill);
     }
 
-    // Cardinal labels around the rose's outer edge. Each label sits just
-    // outside the slice it corresponds to, in the angular direction of that
-    // slice's center. Faint white so the labels read as quiet annotation,
-    // not chrome.
+    // Cardinal labels positioned inside the rose, centered along each slice's
+    // direction at a radius about 12 px short of the perimeter. Faint white
+    // so the labels read as quiet annotation, not chrome.
     const ImU32 cardinal_col = IM_COL32(255, 255, 255, 130);
-    const float label_radius = radius + 2.0f;
+    const float label_radius = std::max(0.0f, radius - 12.0f);
     for (int i = 0; i < 8; ++i) {
         const float a = kRoseAngleOffset + (two_pi / 8.0f) * static_cast<float>(i);
         const ImVec2 anchor(center.x + label_radius * cosf(a),
                              center.y + label_radius * sinf(a));
         const ImVec2 ts = ImGui::CalcTextSize(labels[i]);
-        // Position so the label's nearest edge sits at the anchor, pushed
-        // slightly outward so the rose outline doesn't clip its glyphs.
-        const float dir_x = cosf(a);
-        const float dir_y = sinf(a);
-        const float lx = anchor.x - ts.x * 0.5f + dir_x * (ts.x * 0.5f);
-        const float ly = anchor.y - ts.y * 0.5f + dir_y * (ts.y * 0.5f);
+        const float lx = anchor.x - ts.x * 0.5f;
+        const float ly = anchor.y - ts.y * 0.5f;
         dl->AddText(ImVec2(lx, ly), cardinal_col, labels[i]);
     }
 
@@ -966,6 +961,12 @@ static void section_spatial(const AudioSnapshot& snap, config::Settings& cfg, bo
                         1.0f, 11.0f, "%.2f"))
             dirty = true;
         tip("Visual-only multiplier on the directional uniforms (listeningway_front, _front_right, etc.).\nTechnical: frequency.amplifier_direction, [1, 11]");
+        if (slider_row("Spread", &cfg.frequency.spatial_spread, 0.0f, 0.5f, "%.2f"))
+            dirty = true;
+        tip("How much each direction's energy bleeds into its two neighbours on the rose. 0 = sharp peaks per channel; 0.5 = soft glow.\nTechnical: frequency.spatial_spread, [0, 0.5]");
+        if (slider_row("Smoothing", &cfg.frequency.spatial_smoothing, 0.0f, 0.95f, "%.2f"))
+            dirty = true;
+        tip("Temporal smoothing on the rose. 0 = raw per-frame; higher = calmer rose, slower to react.\nTechnical: frequency.spatial_smoothing, [0, 0.95]");
         ImGui::Unindent(kSubGroupIndent);
     }
 }

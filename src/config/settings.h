@@ -72,6 +72,14 @@ struct FrequencyConfig {
     float amplifier_volume    = 1.0f;
     float amplifier_bands     = 1.0f;
     float amplifier_direction = 1.0f;
+
+    // Directional stage tunables. spatial_spread controls how much each
+    // channel's energy bleeds into its two neighbouring direction buckets
+    // (0 = sharp peaks per channel, 0.5 = soft glow). spatial_smoothing is
+    // a per-frame EMA on the direction8 vector to calm flicker on
+    // percussive content (0 = no smoothing, → 1 = heavily smoothed).
+    float spatial_spread    = 0.25f;
+    float spatial_smoothing = 0.10f;
 };
 
 /// AGC normalization (running-mean ratios).

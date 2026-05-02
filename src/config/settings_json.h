@@ -34,7 +34,8 @@ NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE_WITH_DEFAULT(FrequencyConfig,
     band_count, fft_size, band_scale, log_strength, band_norm,
     min_freq, max_freq,
     equalizer_bands, equalizer_width,
-    amplifier_volume, amplifier_bands, amplifier_direction)
+    amplifier_volume, amplifier_bands, amplifier_direction,
+    spatial_spread, spatial_smoothing)
 
 NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE_WITH_DEFAULT(AgcConfig,
     window_seconds, clamp_max, att_attack_ms, att_release_ms)

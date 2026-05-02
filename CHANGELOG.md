@@ -5,6 +5,37 @@ All notable changes to Listeningway will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+
+- **Stereo spatial mapping.** Hard-Right and hard-Left audio no longer
+  bias toward the front-right / front-left buckets. The previous v1
+  routing put right-only content at 70% FR + 30% R, which assumed a
+  "speakers in front of the listener" model and didn't match the
+  headphone use case where R should mean R. The DirectionalStage now
+  routes mid (in-both) energy to F, left-only energy to L, right-only
+  energy to R. 5.1 and 7.1 keep their per-channel routing; LFE is no
+  longer faked into Back.
+
+### Added
+
+- **`frequency.spatial_spread`** (default 0.25, range [0, 0.5]). How
+  much each direction bucket's energy bleeds into its two ring
+  neighbours. At the default, hard-Right shows R = 1.0 with FR = BR
+  = 0.25 so the rose feels alive without overweighting any single
+  bucket. 0 = sharp peaks per channel, 0.5 = soft glow.
+- **`frequency.spatial_smoothing`** (default 0.10, range [0, 0.95]).
+  Per-frame EMA on the `direction8` vector to calm flicker on
+  percussive content. Independent of `audio.pan_smoothing` (which
+  affects the L/R pan readout, not the rose).
+
+### Changed
+
+- The Spatial section's Settings disclosure exposes the two new
+  tunables (Spread and Smoothing) alongside the existing Direction
+  Boost.
+
 ## [2.0.0-beta.2] - 2026-05-02
 
 Network outputs, loader-lock-safe boot, and a substantial overlay UX pass.
