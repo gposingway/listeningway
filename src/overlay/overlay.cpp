@@ -30,6 +30,8 @@
 
 #include "../audio/pipeline/audio_system.h"
 #include "../config/store.h"
+#include "../output/consumer_registry.h"
+#include "../output/i_output_consumer.h"
 
 namespace lw {
 
@@ -616,6 +618,131 @@ static void section_profiler(const AudioSnapshot& snap) {
     }
 }
 
+// ---------------- Section: Network Outputs ------------------------------
+
+namespace {
+
+// Generic two-row "host" / "port" editor. Returns true if anything changed.
+bool host_port_rows(const char* prefix, std::string& host, int& port,
+                     int port_lo, int port_hi) {
+    bool changed = false;
+
+    // Host text input
+    label_left("Host:");
+    char host_buf[64] = {};
+    std::snprintf(host_buf, sizeof(host_buf), "%s", host.c_str());
+    char id[40]; std::snprintf(id, sizeof(id), "##host_%s", prefix);
+    ImGui::PushItemWidth(-1);
+    if (ImGui::InputText(id, host_buf, sizeof(host_buf))) {
+        host = host_buf;
+        changed = true;
+    }
+    ImGui::PopItemWidth();
+    tip("Destination address. 127.0.0.1 = localhost; LAN/Internet addresses send data over the network.");
+
+    // Port slider
+    label_left("Port:");
+    char id2[40]; std::snprintf(id2, sizeof(id2), "##port_%s", prefix);
+    ImGui::PushItemWidth(-1);
+    if (ImGui::InputInt(id2, &port)) {
+        port = std::clamp(port, port_lo, port_hi);
+        changed = true;
+    }
+    ImGui::PopItemWidth();
+
+    return changed;
+}
+
+void section_network_outputs(config::Settings& cfg, bool& dirty,
+                              output::ConsumerRegistry& registry) {
+    section_title("Network Outputs");
+
+    // ---- OSC ------------------------------------------------------------
+    if (checkbox_row("OSC enabled", &cfg.network.osc.enabled,
+        "Send-only UDP broadcaster. No port is opened on this machine. "
+        "Default destination 127.0.0.1:9000 matches TouchDesigner; "
+        "Resolume default is 7000.")) dirty = true;
+
+    if (auto* c = registry.find_by_id("osc")) {
+        const auto status = c->status_line();
+        if (!status.empty()) {
+            label_left("Status:");
+            ImGui::TextDisabled("%s", status.c_str());
+        }
+    }
+
+    if (settings_subtree("osc")) {
+        ImGui::Indent(overlay_style::kSubGroupIndent);
+        ImGui::TextDisabled("%s",
+            "Sends audio analysis as OSC messages mirroring the shader "
+            "uniform tree (/listeningway/volume, /listeningway/freqbands, ...). "
+            "No listening port is opened. Safe in any anti-cheat context.");
+        ImGui::Spacing();
+        if (host_port_rows("osc", cfg.network.osc.host, cfg.network.osc.port,
+                            1, 65535)) {
+            dirty = true;
+        }
+        if (slider_int_row("Rate (Hz)", &cfg.network.osc.rate_hz, 1, 120,
+            "Send rate in messages-per-second per address. Default 60.")) {
+            cfg.network.osc.rate_hz = std::clamp(cfg.network.osc.rate_hz, 1, 120);
+            dirty = true;
+        }
+        label_left("Test:");
+        if (ImGui::Button("Send test packet##osc", ImVec2(-1, 0))) {
+            if (auto* c = registry.find_by_id("osc")) c->send_test_packet();
+        }
+        tip("Sends a single /listeningway/test  f  1.0 message. Use samples/osc_receiver.py to verify.");
+        ImGui::Unindent(overlay_style::kSubGroupIndent);
+    }
+
+    // ---- OpenRGB --------------------------------------------------------
+    ImGui::Spacing();
+    if (checkbox_row("OpenRGB enabled", &cfg.network.openrgb.enabled,
+        "TCP client to a running OpenRGB server (default 127.0.0.1:6742). "
+        "Drives RGB peripherals from the audio analysis. The server must "
+        "be running.")) dirty = true;
+
+    if (auto* c = registry.find_by_id("openrgb")) {
+        const auto status = c->status_line();
+        if (!status.empty()) {
+            label_left("Status:");
+            ImGui::TextDisabled("%s", status.c_str());
+        }
+    }
+
+    if (settings_subtree("openrgb")) {
+        ImGui::Indent(overlay_style::kSubGroupIndent);
+        ImGui::TextDisabled("%s",
+            "Connects as a client to your OpenRGB server. We are the "
+            "client; no listening port is opened on this machine. Safe in "
+            "any anti-cheat context.");
+        ImGui::Spacing();
+        if (host_port_rows("openrgb", cfg.network.openrgb.host,
+                            cfg.network.openrgb.port, 1, 65535)) {
+            dirty = true;
+        }
+        if (slider_int_row("Rate (Hz)", &cfg.network.openrgb.rate_hz, 5, 60,
+            "Frame rate. Default 30. The OpenRGB server has CPU-wake-up "
+            "issues above ~60 Hz.")) {
+            cfg.network.openrgb.rate_hz = std::clamp(cfg.network.openrgb.rate_hz, 5, 60);
+            dirty = true;
+        }
+        if (slider_row("Brightness", &cfg.network.openrgb.brightness, 0.0f, 1.0f, "%.2f",
+            "Global multiplier on output color intensity (0..1).")) {
+            dirty = true;
+        }
+        label_left("Test:");
+        if (ImGui::Button("Flash all LEDs##openrgb", ImVec2(-1, 0))) {
+            if (auto* c = registry.find_by_id("openrgb")) c->send_test_packet();
+        }
+        tip("Connects briefly and flashes all LEDs to white for one frame. "
+            "Verifies the server is reachable and devices respond.");
+        ImGui::Unindent(overlay_style::kSubGroupIndent);
+    }
+}
+
+}  // namespace
+
 // ---------------- Section: Settings management ---------------------------
 
 static void section_settings_mgmt(config::Store& store, config::Settings& cfg,
@@ -645,7 +772,9 @@ static void section_settings_mgmt(config::Store& store, config::Settings& cfg,
 
 void draw_overlay(reshade::api::effect_runtime*,
                   AudioSystem& system,
-                  config::Store& store) {
+                  config::Store& store,
+                  output::ConsumerRegistry& consumers,
+                  HMODULE addon_module) {
     const auto snap = system.snapshot();
     auto cfg = store.snapshot();
     bool dirty = false;
@@ -658,11 +787,14 @@ void draw_overlay(reshade::api::effect_runtime*,
     section_frequency(snap, cfg, dirty);
     section_directional(snap, cfg, dirty);
     section_chronotensity(snap, cfg, dirty);
+    section_network_outputs(cfg, dirty, consumers);
     section_profiler(snap);
     section_settings_mgmt(store, cfg, system);
 
     if (dirty) {
         store.publish(cfg);
+        // React to live toggle changes (network consumer enable/disable).
+        consumers.on_settings_changed(system, addon_module, cfg);
     }
 }
 

@@ -45,6 +45,9 @@ public:
         return consumers_;
     }
 
+    /// Look up a consumer by id() string. Returns nullptr if not found.
+    IOutputConsumer* find_by_id(std::string_view id) const;
+
 private:
     std::vector<std::unique_ptr<IOutputConsumer>> consumers_;
     std::vector<bool> active_;  ///< parallel to consumers_; tracks start state

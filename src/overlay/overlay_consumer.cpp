@@ -33,8 +33,8 @@ std::string OverlayConsumer::status_line() const {
 
 void OverlayConsumer::on_overlay(reshade::api::effect_runtime* runtime) {
     auto* self = s_instance;
-    if (!self || !self->system_ || !self->store_) return;
-    draw_overlay(runtime, *self->system_, *self->store_);
+    if (!self || !self->system_ || !self->store_ || !self->registry_) return;
+    draw_overlay(runtime, *self->system_, *self->store_, *self->registry_, self->addon_);
 }
 
 }  // namespace lw::overlay

@@ -47,7 +47,7 @@ public:
 
     /// Send a single full-white flash to all LEDs (one frame). Lets the
     /// overlay verify connectivity without waiting for music.
-    bool send_test_packet();
+    bool send_test_packet() override;
 
 private:
     void worker_main();

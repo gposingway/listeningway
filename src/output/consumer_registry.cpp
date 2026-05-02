@@ -51,4 +51,11 @@ void ConsumerRegistry::on_settings_changed(AudioSystem& system, HMODULE addon_mo
     }
 }
 
+IOutputConsumer* ConsumerRegistry::find_by_id(std::string_view id) const {
+    for (auto& c : consumers_) {
+        if (c->id() == id) return c.get();
+    }
+    return nullptr;
+}
+
 }  // namespace lw::output

@@ -42,7 +42,7 @@ public:
     /// Send a single test packet (`/listeningway/test`) on demand. Used by
     /// the overlay's "test send" button to verify connectivity without
     /// waiting for the worker tick.
-    bool send_test_packet();
+    bool send_test_packet() override;
 
 private:
     void worker_main();

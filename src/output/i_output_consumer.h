@@ -56,6 +56,11 @@ public:
     /// Network consumers should return useful runtime info: destination,
     /// rate, packet count, last error.
     virtual std::string status_line() const { return {}; }
+
+    /// Optional "send a single ping" hook for the overlay's test button.
+    /// Returns true if a test message went out, false if the consumer
+    /// doesn't support it or the test failed. Default: not supported.
+    virtual bool send_test_packet() { return false; }
 };
 
 }  // namespace lw::output

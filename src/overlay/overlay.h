@@ -8,15 +8,20 @@
 // ---------------------------------------------
 #pragma once
 
+#include <windows.h>
+
 #include <reshade.hpp>
 
 namespace lw {
 
 class AudioSystem;
 namespace config { class Store; }
+namespace output { class ConsumerRegistry; }
 
 void draw_overlay(reshade::api::effect_runtime* runtime,
                   AudioSystem& system,
-                  config::Store& store);
+                  config::Store& store,
+                  output::ConsumerRegistry& consumers,
+                  HMODULE addon_module);
 
 }  // namespace lw
