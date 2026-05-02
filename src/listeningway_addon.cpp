@@ -31,6 +31,7 @@
 #include "audio/dsp/stages/loudness_stage.h"
 #include "config/store.h"
 #include "output/consumer_registry.h"
+#include "output/openrgb_consumer.h"
 #include "output/osc_consumer.h"
 #include "output/uniform_publisher_consumer.h"
 #include "overlay/overlay_consumer.h"
@@ -93,6 +94,7 @@ bool init() {
     g_consumers->add(std::make_unique<lw::output::UniformPublisherConsumer>());
     g_consumers->add(std::make_unique<lw::overlay::OverlayConsumer>(*g_store, *g_consumers));
     g_consumers->add(std::make_unique<lw::output::OscConsumer>(*g_store));
+    g_consumers->add(std::make_unique<lw::output::OpenRgbConsumer>(*g_store));
 
     g_consumers->start_all(*g_system, g_module_handle, g_store->snapshot());
     return true;

@@ -7,3 +7,4 @@
 /third_party/*
 # Vendored dependencies are tracked; clones from prepare.bat are not.
 !/third_party/tinyosc/
+!/third_party/Youda008-OpenRGB-cppSDK/

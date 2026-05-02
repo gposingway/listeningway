@@ -25,6 +25,9 @@ find_package(KissFFT CONFIG REQUIRED)
 find_package(nlohmann_json CONFIG REQUIRED)
 find_package(readerwriterqueue CONFIG REQUIRED)
 
+# Vendored OpenRGB SDK (third_party/Youda008-OpenRGB-cppSDK).
+add_subdirectory(third_party/Youda008-OpenRGB-cppSDK EXCLUDE_FROM_ALL)
+
 # --- The addon target ----------------------------------------------------
 add_library(${PROJECT_NAME} SHARED
     # Top-level entry
@@ -92,6 +95,8 @@ add_library(${PROJECT_NAME} SHARED
     src/output/uniform_publisher_consumer.cpp
     src/output/osc_consumer.h
     src/output/osc_consumer.cpp
+    src/output/openrgb_consumer.h
+    src/output/openrgb_consumer.cpp
 
     # Overlay (ImGui)
     src/overlay/overlay.h
@@ -123,6 +128,7 @@ target_link_libraries(${PROJECT_NAME} PRIVATE
     kissfft::kissfft-float
     nlohmann_json::nlohmann_json
     readerwriterqueue::readerwriterqueue
+    orgbsdk
     Ole32
     Propsys
     Avrt
