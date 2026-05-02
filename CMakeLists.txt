@@ -1,5 +1,11 @@
 cmake_minimum_required(VERSION 3.15) # vcpkg recommends at least 3.15
 
+# Honor MSVC_RUNTIME_LIBRARY target property so the test target can pick /MT
+# to match vcpkg's x64-windows-static CRT.
+if(POLICY CMP0091)
+    cmake_policy(SET CMP0091 NEW)
+endif()
+
 project(Listeningway LANGUAGES CXX)
 
 # Set C++ standard
@@ -110,3 +116,10 @@ endif()
 # set_target_properties(${PROJECT_NAME} PROPERTIES RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
 
 message(STATUS "Configuring Listeningway ReShade Addon")
+
+# --- Tests ---
+option(LISTENINGWAY_BUILD_TESTS "Build unit tests" ON)
+if(LISTENINGWAY_BUILD_TESTS)
+    enable_testing()
+    add_subdirectory(tests)
+endif()
