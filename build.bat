@@ -4,13 +4,13 @@ setlocal
 set RESHADE_SDK_PATH=%CD%\third_party\reshade\include
 
 REM === Generate ListeningwayUniforms.fxh from template ===
-REM NUM_BANDS is extracted from DEFAULT_NUM_BANDS in src\core\constants.h —
-REM the single source of truth. It defines the compile-time size of the
+REM NUM_BANDS is extracted from DEFAULT_NUM_BANDS in src\listeningway_constants.h
+REM (v2 location). It defines the compile-time size of the
 REM Listeningway_FreqBands[] array in shaders and is also the runtime
 REM default band count. The live band count the addon is currently
 REM publishing is exposed via the Listeningway_NumBands uniform so shaders
 REM iterate only populated entries.
-set CONSTANTS_H=src\core\constants.h
+set CONSTANTS_H=src\listeningway_constants.h
 if not exist %CONSTANTS_H% (
     echo Constants file %CONSTANTS_H% not found!
     exit /b 1
