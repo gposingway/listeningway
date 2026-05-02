@@ -30,6 +30,7 @@ ADRs follow [MADR](https://adr.github.io/madr/) structure:
 | [0006](0006-testing-strategy.md) | Testing strategy — property-based, FileSource replay, no parity baseline | Accepted |
 | [0007](0007-v1-scope.md) | v1 scope lock — what's in, what's deferred | Accepted |
 | [0008](0008-language-and-dependencies.md) | Language and dependencies — C++20, vcpkg-pinned libraries | Accepted |
+| [0009](0009-process-audio-source.md) | ProcessAudioSource — per-process loopback for game-only isolation | Accepted |
 
 ## Reading order for new contributors
 

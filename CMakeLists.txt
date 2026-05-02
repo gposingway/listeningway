@@ -37,6 +37,8 @@ add_library(${PROJECT_NAME} SHARED
     src/audio/source/off_source.h
     src/audio/source/wasapi_loopback_source.h
     src/audio/source/wasapi_loopback_source.cpp
+    src/audio/source/process_audio_source.h
+    src/audio/source/process_audio_source.cpp
 
     # Ring buffer layer
     src/audio/ring/frame_ring.h
@@ -110,6 +112,7 @@ target_link_libraries(${PROJECT_NAME} PRIVATE
     Ole32
     Propsys
     Avrt
+    Mmdevapi
 )
 
 if(MSVC)

@@ -16,6 +16,7 @@
 
 #include "audio/pipeline/audio_system.h"
 #include "audio/source/off_source.h"
+#include "audio/source/process_audio_source.h"
 #include "audio/source/wasapi_loopback_source.h"
 #include "audio/dsp/stages/volume_stage.h"
 #include "audio/dsp/stages/fft_stage.h"
@@ -91,6 +92,7 @@ bool init() {
 
     g_system = std::make_unique<lw::AudioSystem>(g_store.get());
     g_system->register_source(std::make_unique<lw::source::WasapiLoopbackSource>());
+    g_system->register_source(std::make_unique<lw::source::ProcessAudioSource>());
     g_system->register_source(std::make_unique<lw::source::OffSource>());
     compose_pipeline(g_system->pipeline());
 
