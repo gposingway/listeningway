@@ -174,6 +174,7 @@ void AnalyzeAudioBuffer(const float* data, size_t numFrames, size_t numChannels,
             __m128 mag = _mm_sqrt_ps(sums);
             _mm_storeu_ps(&tl_magnitudes[i], mag);
         }
+    }
 #endif
         for (; i < half_fft_size; ++i) {
             float r = tl_fft_out[i].r;
@@ -925,11 +926,6 @@ void AnalyzeAudioBuffer(const float* data, size_t numFrames, size_t numChannels,
 }
 
 // Implementation of AudioAnalyzer
-
-// Defensive: ensure all preceding scopes are closed before method definitions
-// (Prevents parser from treating the following as in-function code if a prior
-// conditional block was not compiled as expected.)
-}
 
 AudioAnalyzer::AudioAnalyzer() : beat_detector_(nullptr), current_algorithm_(0), is_running_(false) {
     LOG_DEBUG("[AudioAnalyzer] Constructed");

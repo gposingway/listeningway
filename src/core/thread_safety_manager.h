@@ -6,7 +6,6 @@
 #pragma once
 #include <mutex>
 #include <memory>
-#include <vector>
 
 namespace Listeningway {
 
@@ -47,20 +46,6 @@ public:
     };
 
     /**
-     * @brief RAII lock guard for multiple mutexes (prevents deadlock)
-     */
-    class MultipleLock {
-    public:
-        explicit MultipleLock(std::initializer_list<LockType> types);
-        ~MultipleLock();
-        MultipleLock(const MultipleLock&) = delete;
-        MultipleLock& operator=(const MultipleLock&) = delete;
-
-    private:
-        std::vector<std::unique_lock<std::mutex>> locks_;
-    };
-
-    /**
      * @brief Get the singleton instance
      */
     static ThreadSafetyManager& Instance();
@@ -74,11 +59,6 @@ public:
     SingleLock LockAudioData() { return SingleLock(LockType::AUDIO_DATA); }
     SingleLock LockLogging() { return SingleLock(LockType::LOGGING); }
     SingleLock LockProviderSwitch() { return SingleLock(LockType::PROVIDER_SWITCH); }
-    
-    // Multi-lock for complex operations
-    MultipleLock LockProviderAndAudio() { 
-        return MultipleLock({LockType::PROVIDER_SWITCH, LockType::AUDIO_DATA}); 
-    }
 
 private:
     ThreadSafetyManager() = default;
@@ -92,6 +72,5 @@ private:
 #define LOCK_AUDIO_DATA() auto _audio_lock = Listeningway::ThreadSafetyManager::Instance().LockAudioData()
 #define LOCK_LOGGING() auto _log_lock = Listeningway::ThreadSafetyManager::Instance().LockLogging()
 #define LOCK_PROVIDER_SWITCH() auto _provider_lock = Listeningway::ThreadSafetyManager::Instance().LockProviderSwitch()
-#define LOCK_PROVIDER_AND_AUDIO() auto _multi_lock = Listeningway::ThreadSafetyManager::Instance().LockProviderAndAudio()
 
 } // namespace Listeningway

@@ -18,3 +18,7 @@ void LogToFile(const std::string& message, LogLevel level = LogLevel::Debug);
 // Log file management
 void OpenLogFile(const std::string& filename);
 void CloseLogFile();
+
+// Refreshes the cached debug flag used to gate LOG_DEBUG / LOG_INFO / LOG_WARNING.
+// Call after Configuration changes; reading the flag is a relaxed atomic load.
+void SetLogDebugEnabled(bool enabled);

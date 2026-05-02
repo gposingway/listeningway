@@ -3,8 +3,6 @@
 // Centralizes all thread synchronization for the Listeningway system
 // ---------------------------------------------
 #include "thread_safety_manager.h"
-#include <algorithm>
-#include <vector>
 
 namespace Listeningway {
 
@@ -26,26 +24,10 @@ std::mutex& ThreadSafetyManager::GetMutex(LockType type) {
     }
 }
 
-// SingleLock implementation
-ThreadSafetyManager::SingleLock::SingleLock(LockType type) 
+ThreadSafetyManager::SingleLock::SingleLock(LockType type)
     : lock_(ThreadSafetyManager::Instance().GetMutex(type)), type_(type) {
 }
 
 ThreadSafetyManager::SingleLock::~SingleLock() = default;
-
-// MultipleLock implementation
-ThreadSafetyManager::MultipleLock::MultipleLock(std::initializer_list<LockType> types) {
-    // Convert to vector and sort by lock priority to prevent deadlock
-    std::vector<LockType> sorted_types(types);
-    std::sort(sorted_types.begin(), sorted_types.end());
-    
-    // Lock mutexes in priority order
-    locks_.reserve(sorted_types.size());
-    for (LockType type : sorted_types) {
-        locks_.emplace_back(ThreadSafetyManager::Instance().GetMutex(type));
-    }
-}
-
-ThreadSafetyManager::MultipleLock::~MultipleLock() = default;
 
 } // namespace Listeningway

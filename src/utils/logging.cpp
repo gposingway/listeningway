@@ -5,24 +5,27 @@
 #include "logging.h"
 #include "settings.h"
 #include "../core/thread_safety_manager.h"
+#include "../configuration/configuration_manager.h"
+#include <atomic>
 #include <fstream>
 #include <chrono>
 #include <ctime>
 
 static std::ofstream g_log_file;
-extern bool g_listeningway_debug_enabled;
 
-static std::string GetLogFilePath() {
-    std::string ini = GetSettingsPath();
-    size_t pos = ini.find_last_of("\\/");
-    std::string dir = (pos != std::string::npos) ? ini.substr(0, pos + 1) : "";
-    return dir + "listeningway.log";
+// Cached debug-enabled flag, refreshed by SetDebugEnabled / config load.
+// Avoids taking the ConfigurationManager mutex on every log call from hot
+// paths (audio capture / analysis threads).
+static std::atomic_bool g_log_debug_enabled{false};
+
+void SetLogDebugEnabled(bool enabled) {
+    g_log_debug_enabled.store(enabled, std::memory_order_relaxed);
 }
 
 // Writes a timestamped message to the log file (thread-safe)
 void LogToFile(const std::string& message, LogLevel level) {
     // Always log errors, only log debug if enabled
-    if (level == LogLevel::Debug && !g_listeningway_debug_enabled) return;
+    if (level == LogLevel::Debug && !g_log_debug_enabled.load(std::memory_order_relaxed)) return;
     LOCK_LOGGING();
     if (g_log_file.is_open()) {
         // Get current time for timestamp

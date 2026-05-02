@@ -2,12 +2,14 @@
 #include "logging.h"
 #include "settings.h"
 #include <fstream>
-#include <sstream>
 #include <windows.h>
 #include <shlobj.h>
 #include <algorithm>
 #include <cmath>
 #include <filesystem>
+#include <nlohmann/json.hpp>
+
+using nlohmann::json;
 
 namespace Listeningway {
 
@@ -20,20 +22,16 @@ bool Configuration::Load() {
 }
 
 void Configuration::ResetToDefaults() {
-    // Reset to default values by reconstructing the object
     *this = Configuration{};
     LOG_DEBUG("[Configuration] Reset all settings to defaults");
 }
 
 bool Configuration::Validate() {
     bool isValid = true;
-    
-    // Validate audio settings
-    // audio.captureProvider = std::max(-1, audio.captureProvider); // (legacy, remove after migration)
+
     audio.panSmoothing = std::clamp(audio.panSmoothing, 0.0f, 1.0f);
     audio.panOffset = std::clamp(audio.panOffset, -1.0f, 1.0f);
-    
-    // Validate beat detection settings
+
     beat.algorithm = std::clamp(beat.algorithm, 0, 1);
     beat.falloffDefault = std::clamp(beat.falloffDefault, 0.1f, 10.0f);
     beat.timeScale = std::clamp(beat.timeScale, 1e-12f, 1e-6f);
@@ -49,8 +47,7 @@ bool Configuration::Validate() {
     beat.maxFreq = std::clamp(beat.maxFreq, 0.0f, 22050.0f);
     beat.fluxLowAlpha = std::clamp(beat.fluxLowAlpha, 0.01f, 1.0f);
     beat.fluxLowThresholdMultiplier = std::clamp(beat.fluxLowThresholdMultiplier, 0.5f, 5.0f);
-    
-    // Validate frequency settings
+
     frequency.logStrength = std::clamp(frequency.logStrength, 0.2f, 3.0f);
     frequency.minFreq = std::clamp(frequency.minFreq, 10.0f, 500.0f);
     frequency.maxFreq = std::clamp(frequency.maxFreq, 2000.0f, 22050.0f);
@@ -62,292 +59,200 @@ bool Configuration::Validate() {
     frequency.amplifierVolume = std::clamp(frequency.amplifierVolume, OVERLAY_AMPLIFIER_MIN, OVERLAY_AMPLIFIER_MAX);
     frequency.amplifierBands = std::clamp(frequency.amplifierBands, OVERLAY_AMPLIFIER_MIN, OVERLAY_AMPLIFIER_MAX);
     frequency.amplifierDirection = std::clamp(frequency.amplifierDirection, OVERLAY_AMPLIFIER_MIN, OVERLAY_AMPLIFIER_MAX);
-    
-    // Ensure min < max for frequency ranges
+
     if (frequency.minFreq >= frequency.maxFreq) {
         frequency.maxFreq = frequency.minFreq + 1000.0f;
         isValid = false;
     }
-    
+
     if (beat.minFreq >= beat.maxFreq) {
         beat.maxFreq = beat.minFreq + 100.0f;
         isValid = false;
     }
-    
+
     return isValid;
 }
 
 std::string Configuration::GetDefaultConfigPath() {
-    // Use the same directory as the INI/log file
-    std::string ini = GetSettingsPath();
-    size_t pos = ini.find_last_of("\\/");
-    std::string dir = (pos != std::string::npos) ? ini.substr(0, pos + 1) : "";
-    if (!dir.empty()) {
-        std::filesystem::path dirPath(dir);
+    std::string path = GetSettingsPath();  // Listeningway.json next to DLL
+    size_t pos = path.find_last_of("\\/");
+    if (pos != std::string::npos) {
+        std::filesystem::path dirPath(path.substr(0, pos + 1));
         if (!std::filesystem::exists(dirPath)) {
             std::filesystem::create_directories(dirPath);
         }
     }
-    return dir + "Listeningway.json";
+    return path;
 }
 
 bool Configuration::SaveToJson(const std::string& filepath) const {
     try {
         LOG_DEBUG("[Configuration] Attempting to save config to: " + filepath);
+        json j;
+
+        j["audio"] = {
+            {"analysisEnabled", audio.analysisEnabled},
+            {"captureProviderCode", audio.captureProviderCode},
+            {"panSmoothing", audio.panSmoothing},
+            {"panOffset", audio.panOffset},
+            {"simdEnabled", audio.simdEnabled},
+        };
+
+        j["beat"] = {
+            {"algorithm", beat.algorithm},
+            {"profile", beat.profile},
+            {"falloffDefault", beat.falloffDefault},
+            {"timeScale", beat.timeScale},
+            {"timeInitial", beat.timeInitial},
+            {"timeMin", beat.timeMin},
+            {"timeDivisor", beat.timeDivisor},
+            {"spectralFluxThreshold", beat.spectralFluxThreshold},
+            {"spectralFluxDecayMultiplier", beat.spectralFluxDecayMultiplier},
+            {"tempoChangeThreshold", beat.tempoChangeThreshold},
+            {"beatInductionWindow", beat.beatInductionWindow},
+            {"octaveErrorWeight", beat.octaveErrorWeight},
+            {"minFreq", beat.minFreq},
+            {"maxFreq", beat.maxFreq},
+            {"fluxLowAlpha", beat.fluxLowAlpha},
+            {"fluxLowThresholdMultiplier", beat.fluxLowThresholdMultiplier},
+            {"fluxMin", beat.fluxMin},
+        };
+
+        j["frequency"] = {
+            {"logScaleEnabled", frequency.logScaleEnabled},
+            {"logStrength", frequency.logStrength},
+            {"minFreq", frequency.minFreq},
+            {"maxFreq", frequency.maxFreq},
+            {"equalizerBands", frequency.equalizerBands},
+            {"equalizerWidth", frequency.equalizerWidth},
+            {"amplifier", frequency.amplifier},
+            {"amplifierVolume", frequency.amplifierVolume},
+            {"amplifierBands", frequency.amplifierBands},
+            {"amplifierDirection", frequency.amplifierDirection},
+            {"bands", frequency.bands},
+            {"fftSize", frequency.fftSize},
+            {"bandNorm", frequency.bandNorm},
+        };
+
+        j["debug"] = {
+            {"debugEnabled", debug.debugEnabled},
+            {"overlayEnabled", debug.overlayEnabled},
+        };
+
         std::ofstream file(filepath);
         if (!file.is_open()) {
             LOG_ERROR("[Configuration] Failed to open file for writing: " + filepath);
             return false;
         }
-        
-        // Simple JSON serialization (no external dependencies)
-        file << "{\n";
-        
-        // Audio settings
-        file << "  \"audio\": {\n";
-        file << "    \"analysisEnabled\": " << (audio.analysisEnabled ? "true" : "false") << ",\n";
-        file << "    \"captureProviderCode\": \"" << audio.captureProviderCode << "\",\n";
-        file << "    \"panSmoothing\": " << audio.panSmoothing << ",\n";
-    file << "    \"panOffset\": " << audio.panOffset << ",\n";
-    file << "    \"simdEnabled\": " << (audio.simdEnabled ? "true" : "false") << "\n";
-        file << "  },\n";
-        
-        // Beat detection settings
-        file << "  \"beat\": {\n";
-    file << "    \"algorithm\": " << beat.algorithm << ",\n";
-    file << "    \"profile\": \"" << beat.profile << "\",\n";
-        file << "    \"falloffDefault\": " << beat.falloffDefault << ",\n";
-        file << "    \"timeScale\": " << beat.timeScale << ",\n";
-        file << "    \"timeInitial\": " << beat.timeInitial << ",\n";
-        file << "    \"timeMin\": " << beat.timeMin << ",\n";
-        file << "    \"timeDivisor\": " << beat.timeDivisor << ",\n";
-        file << "    \"spectralFluxThreshold\": " << beat.spectralFluxThreshold << ",\n";
-        file << "    \"spectralFluxDecayMultiplier\": " << beat.spectralFluxDecayMultiplier << ",\n";
-        file << "    \"tempoChangeThreshold\": " << beat.tempoChangeThreshold << ",\n";
-        file << "    \"beatInductionWindow\": " << beat.beatInductionWindow << ",\n";
-        file << "    \"octaveErrorWeight\": " << beat.octaveErrorWeight << ",\n";
-        file << "    \"minFreq\": " << beat.minFreq << ",\n";
-        file << "    \"maxFreq\": " << beat.maxFreq << ",\n";
-        file << "    \"fluxLowAlpha\": " << beat.fluxLowAlpha << ",\n";
-        file << "    \"fluxLowThresholdMultiplier\": " << beat.fluxLowThresholdMultiplier << "\n";
-        file << "  },\n";
-        
-        // Frequency settings
-        file << "  \"frequency\": {\n";
-        file << "    \"logScaleEnabled\": " << (frequency.logScaleEnabled ? "true" : "false") << ",\n";
-        file << "    \"logStrength\": " << frequency.logStrength << ",\n";
-        file << "    \"minFreq\": " << frequency.minFreq << ",\n";
-        file << "    \"maxFreq\": " << frequency.maxFreq << ",\n";
-        file << "    \"equalizerBands\": [";
-        for (size_t i = 0; i < frequency.equalizerBands.size(); ++i) {
-            file << frequency.equalizerBands[i];
-            if (i < frequency.equalizerBands.size() - 1) file << ", ";
-        }
-        file << "],\n";
-    file << "    \"equalizerWidth\": " << frequency.equalizerWidth << ",\n";
-    // Write both legacy and new split amplifiers
-    file << "    \"amplifier\": " << frequency.amplifier << ",\n";
-    file << "    \"amplifierVolume\": " << frequency.amplifierVolume << ",\n";
-    file << "    \"amplifierBands\": " << frequency.amplifierBands << ",\n";
-    file << "    \"amplifierDirection\": " << frequency.amplifierDirection << ",\n";
-        // Serialize new members
-        file << "    \"bands\": " << frequency.bands << ",\n";
-        file << "    \"fftSize\": " << frequency.fftSize << ",\n";
-        file << "    \"bandNorm\": " << frequency.bandNorm << "\n";
-        file << "  },\n";
-        
-        // Debug settings
-        file << "  \"debug\": {\n";
-        file << "    \"debugEnabled\": " << (debug.debugEnabled ? "true" : "false") << ",\n";
-        file << "    \"overlayEnabled\": " << (debug.overlayEnabled ? "true" : "false") << "\n";
-        file << "  }\n";
-        
-        file << "}\n";
-        
-        file.close();
+        file << j.dump(2);
         LOG_DEBUG("[Configuration] Saved configuration to: " + filepath);
         return true;
-        
     } catch (const std::exception& e) {
         LOG_ERROR("[Configuration] Exception while saving: " + std::string(e.what()));
         return false;
     }
 }
 
+namespace {
+
+template <typename T>
+void load_if(const json& obj, const char* key, T& out) {
+    auto it = obj.find(key);
+    if (it != obj.end() && !it->is_null()) {
+        try {
+            out = it->get<T>();
+        } catch (const std::exception&) {
+            // leave default value on type mismatch
+        }
+    }
+}
+
+} // namespace
+
 bool Configuration::LoadFromJson(const std::string& filepath) {
     try {
         std::ifstream file(filepath);
         if (!file.is_open()) {
             LOG_WARNING("[Configuration] Config file not found, using defaults: " + filepath);
-            return false;  // Not an error, will use defaults
+            return false;
         }
-        
-        // Simple JSON parsing (basic implementation)
-        std::string content((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
-        file.close();
-        
-        // Parse key-value pairs (very basic JSON parser)
-        auto getValue = [&content](const std::string& key) -> std::string {
-            std::string searchKey = "\"" + key + "\":";
-            size_t pos = content.find(searchKey);
-            if (pos == std::string::npos) return "";
-            
-            pos += searchKey.length();
-            while (pos < content.length() && (content[pos] == ' ' || content[pos] == '\t')) pos++;
-            
-            size_t start = pos;
-            size_t end = pos;
-            
-            if (content[pos] == '"') {
-                // String value
-                start = pos + 1;
-                end = content.find('"', start);
-            } else if (content[pos] == '[') {
-                // Array value
-                end = content.find(']', pos) + 1;
-            } else {
-                // Number or boolean
-                while (end < content.length() && content[end] != ',' && content[end] != '\n' && content[end] != '}') {
-                    end++;
+
+        json j;
+        try {
+            file >> j;
+        } catch (const json::parse_error& e) {
+            LOG_ERROR("[Configuration] JSON parse error: " + std::string(e.what()));
+            return false;
+        }
+
+        if (j.contains("audio") && j["audio"].is_object()) {
+            const auto& a = j["audio"];
+            load_if(a, "analysisEnabled", audio.analysisEnabled);
+            load_if(a, "captureProviderCode", audio.captureProviderCode);
+            load_if(a, "panSmoothing", audio.panSmoothing);
+            load_if(a, "panOffset", audio.panOffset);
+            load_if(a, "simdEnabled", audio.simdEnabled);
+        }
+
+        if (j.contains("beat") && j["beat"].is_object()) {
+            const auto& b = j["beat"];
+            load_if(b, "algorithm", beat.algorithm);
+            load_if(b, "profile", beat.profile);
+            load_if(b, "falloffDefault", beat.falloffDefault);
+            load_if(b, "timeScale", beat.timeScale);
+            load_if(b, "timeInitial", beat.timeInitial);
+            load_if(b, "timeMin", beat.timeMin);
+            load_if(b, "timeDivisor", beat.timeDivisor);
+            load_if(b, "spectralFluxThreshold", beat.spectralFluxThreshold);
+            load_if(b, "spectralFluxDecayMultiplier", beat.spectralFluxDecayMultiplier);
+            load_if(b, "tempoChangeThreshold", beat.tempoChangeThreshold);
+            load_if(b, "beatInductionWindow", beat.beatInductionWindow);
+            load_if(b, "octaveErrorWeight", beat.octaveErrorWeight);
+            load_if(b, "minFreq", beat.minFreq);
+            load_if(b, "maxFreq", beat.maxFreq);
+            load_if(b, "fluxLowAlpha", beat.fluxLowAlpha);
+            load_if(b, "fluxLowThresholdMultiplier", beat.fluxLowThresholdMultiplier);
+            load_if(b, "fluxMin", beat.fluxMin);
+        }
+
+        if (j.contains("frequency") && j["frequency"].is_object()) {
+            const auto& f = j["frequency"];
+            load_if(f, "logScaleEnabled", frequency.logScaleEnabled);
+            load_if(f, "logStrength", frequency.logStrength);
+            load_if(f, "minFreq", frequency.minFreq);
+            load_if(f, "maxFreq", frequency.maxFreq);
+            if (f.contains("equalizerBands") && f["equalizerBands"].is_array()) {
+                const auto& arr = f["equalizerBands"];
+                for (size_t i = 0; i < frequency.equalizerBands.size() && i < arr.size(); ++i) {
+                    if (arr[i].is_number()) frequency.equalizerBands[i] = arr[i].get<float>();
                 }
             }
-            
-            return content.substr(start, end - start);
-        };
-        
-        // Parse audio settings
-        std::string value = getValue("analysisEnabled");
-        if (!value.empty()) audio.analysisEnabled = (value == "true");
-        
-        value = getValue("captureProviderCode");
-        if (!value.empty()) audio.captureProviderCode = value.substr(1, value.length() - 2); // remove quotes
-        
-        value = getValue("panSmoothing");
-        if (!value.empty()) audio.panSmoothing = std::stof(value);
-        
-        value = getValue("panOffset");
-        if (!value.empty()) audio.panOffset = std::stof(value);
+            load_if(f, "equalizerWidth", frequency.equalizerWidth);
+            load_if(f, "amplifier", frequency.amplifier);
+            load_if(f, "amplifierVolume", frequency.amplifierVolume);
+            load_if(f, "amplifierBands", frequency.amplifierBands);
+            load_if(f, "amplifierDirection", frequency.amplifierDirection);
+            // Back-compat: if new amplifier fields were missing, mirror legacy amplifier
+            const bool hasV = f.contains("amplifierVolume");
+            const bool hasB = f.contains("amplifierBands");
+            const bool hasD = f.contains("amplifierDirection");
+            if (!hasV) frequency.amplifierVolume = frequency.amplifier;
+            if (!hasB) frequency.amplifierBands = frequency.amplifier;
+            if (!hasD) frequency.amplifierDirection = frequency.amplifier;
+            load_if(f, "bands", frequency.bands);
+            load_if(f, "fftSize", frequency.fftSize);
+            load_if(f, "bandNorm", frequency.bandNorm);
+        }
 
-    value = getValue("simdEnabled");
-    if (!value.empty()) audio.simdEnabled = (value == "true");
-        
-        // Parse beat detection settings
-        value = getValue("algorithm");
-        if (!value.empty()) beat.algorithm = std::stoi(value);
-        value = getValue("profile");
-        if (!value.empty()) {
-            // remove quotes if present
-            if (!value.empty() && value.front() == '"' && value.back() == '"') {
-                beat.profile = value.substr(1, value.length() - 2);
-            } else {
-                beat.profile = value;
-            }
+        if (j.contains("debug") && j["debug"].is_object()) {
+            const auto& d = j["debug"];
+            load_if(d, "debugEnabled", debug.debugEnabled);
+            load_if(d, "overlayEnabled", debug.overlayEnabled);
         }
-        
-        value = getValue("falloffDefault");
-        if (!value.empty()) beat.falloffDefault = std::stof(value);
-        
-        value = getValue("timeScale");
-        if (!value.empty()) beat.timeScale = std::stof(value);
-        
-        value = getValue("timeInitial");
-        if (!value.empty()) beat.timeInitial = std::stof(value);
-        
-        value = getValue("timeMin");
-        if (!value.empty()) beat.timeMin = std::stof(value);
-        
-        value = getValue("timeDivisor");
-        if (!value.empty()) beat.timeDivisor = std::stof(value);
-        
-        value = getValue("spectralFluxThreshold");
-        if (!value.empty()) beat.spectralFluxThreshold = std::stof(value);
-        
-        value = getValue("spectralFluxDecayMultiplier");
-        if (!value.empty()) beat.spectralFluxDecayMultiplier = std::stof(value);
-        
-        value = getValue("tempoChangeThreshold");
-        if (!value.empty()) beat.tempoChangeThreshold = std::stof(value);
-        
-        value = getValue("beatInductionWindow");
-        if (!value.empty()) beat.beatInductionWindow = std::stof(value);
-        
-        value = getValue("octaveErrorWeight");
-        if (!value.empty()) beat.octaveErrorWeight = std::stof(value);
-        
-        value = getValue("minFreq");
-        if (!value.empty()) beat.minFreq = std::stof(value);
-        
-        value = getValue("maxFreq");
-        if (!value.empty()) beat.maxFreq = std::stof(value);
-        
-        value = getValue("fluxLowAlpha");
-        if (!value.empty()) beat.fluxLowAlpha = std::stof(value);
-        
-        value = getValue("fluxLowThresholdMultiplier");
-        if (!value.empty()) beat.fluxLowThresholdMultiplier = std::stof(value);
-        
-        // Parse frequency settings
-        value = getValue("logScaleEnabled");
-        if (!value.empty()) frequency.logScaleEnabled = (value == "true");
-        
-        value = getValue("logStrength");
-        if (!value.empty()) frequency.logStrength = std::stof(value);
-        
-        // Parse equalizer bands array
-        value = getValue("equalizerBands");
-        if (!value.empty() && value.front() == '[' && value.back() == ']') {
-            std::string arrayContent = value.substr(1, value.length() - 2);
-            std::istringstream iss(arrayContent);
-            std::string bandValue;
-            size_t bandIndex = 0;
-            while (std::getline(iss, bandValue, ',') && bandIndex < frequency.equalizerBands.size()) {
-                // Trim whitespace
-                bandValue.erase(0, bandValue.find_first_not_of(" \t"));
-                bandValue.erase(bandValue.find_last_not_of(" \t") + 1);
-                frequency.equalizerBands[bandIndex] = std::stof(bandValue);
-                bandIndex++;
-            }
-        }
-        
-        value = getValue("equalizerWidth");
-        if (!value.empty()) frequency.equalizerWidth = std::stof(value);
-        
-        value = getValue("amplifier");
-        if (!value.empty()) frequency.amplifier = std::stof(value);
-        value = getValue("amplifierVolume");
-        if (!value.empty()) frequency.amplifierVolume = std::stof(value);
-        value = getValue("amplifierBands");
-        if (!value.empty()) frequency.amplifierBands = std::stof(value);
-        value = getValue("amplifierDirection");
-        if (!value.empty()) frequency.amplifierDirection = std::stof(value);
-        // Back-compat: if new fields were missing, initialize from legacy amplifier
-        if (frequency.amplifierVolume == DEFAULT_AMPLIFIER && frequency.amplifierBands == DEFAULT_AMPLIFIER && frequency.amplifierDirection == DEFAULT_AMPLIFIER && !getValue("amplifier").empty()) {
-            frequency.amplifierVolume = frequency.amplifier;
-            frequency.amplifierBands = frequency.amplifier;
-            frequency.amplifierDirection = frequency.amplifier;
-        }
-        
-        // Parse new members
-        value = getValue("bands");
-        if (!value.empty()) frequency.bands = static_cast<size_t>(std::stoul(value));
-        value = getValue("fftSize");
-        if (!value.empty()) frequency.fftSize = static_cast<size_t>(std::stoul(value));
-        value = getValue("bandNorm");
-        if (!value.empty()) frequency.bandNorm = std::stof(value);
-        
-        // Parse debug settings
-        value = getValue("debugEnabled");
-        if (!value.empty()) debug.debugEnabled = (value == "true");
-        
-        value = getValue("overlayEnabled");
-        if (!value.empty()) debug.overlayEnabled = (value == "true");
-        
-        // Validate loaded values
+
         Validate();
-        
         LOG_DEBUG("[Configuration] Loaded configuration from: " + filepath);
         return true;
-        
     } catch (const std::exception& e) {
         LOG_ERROR("[Configuration] Exception while loading: " + std::string(e.what()));
         return false;

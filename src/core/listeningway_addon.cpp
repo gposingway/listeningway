@@ -30,7 +30,6 @@ using Listeningway::ConfigurationManager;
 
 std::atomic_bool g_addon_enabled = false;
 std::atomic_bool g_audio_thread_running = false;
-extern std::atomic_bool g_audio_analysis_enabled;
 std::thread g_audio_thread;
 AudioAnalysisData g_audio_data;
 static UniformManager g_uniform_manager;
@@ -183,6 +182,11 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD ul_reason_for_call, LPVOID lpReserv
                     // Stop the audio capture thread
                     StopAudioCaptureThread(g_audio_thread_running, g_audio_thread);
                     LOG_DEBUG("[Addon] Audio capture thread stopped.");
+
+                    // Tear down WASAPI/COM resources owned by the capture manager
+                    UninitializeAudioCapture();
+                    LOG_DEBUG("[Addon] Audio capture manager uninitialized.");
+
                     CloseLogFile();
                     g_addon_enabled = false;
                 }
@@ -234,8 +238,7 @@ extern "C" bool SwitchAudioProvider(int providerType, int timeout_ms = 2000) {
             ConfigurationManager::Instance().SetAnalysisEnabled(false);
             ConfigurationManager::Instance().Save();
         }
-        if (g_audio_analysis_enabled) {
-            g_audio_analysis_enabled = false;
+        if (g_audio_thread_running.load()) {
             StopAudioCaptureThread(g_audio_thread_running, g_audio_thread);
             LOG_DEBUG("[Addon] SwitchAudioProvider: Audio analysis disabled and thread stopped (None selected)");
         }
@@ -279,7 +282,6 @@ extern "C" bool SwitchAudioProvider(int providerType, int timeout_ms = 2000) {
                 return false;
             }
         }
-        g_audio_analysis_enabled = true;
         LOG_DEBUG("[Addon] SwitchAudioProvider: Switched to provider " + std::to_string(providerType) + (was_running ? " (hot restart)" : " (cold start)"));
     } else {
         LOG_ERROR("[Addon] SwitchAudioProvider: Failed to switch/restart to provider " + std::to_string(providerType));

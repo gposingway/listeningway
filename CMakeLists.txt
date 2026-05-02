@@ -49,7 +49,6 @@ add_library(${PROJECT_NAME} SHARED
     src/core/uniform_manager.cpp src/core/uniform_manager.h
     src/core/settings.cpp src/core/settings.h    src/configuration/configuration_manager.cpp src/configuration/configuration_manager.h
     src/configuration/Configuration.cpp src/configuration/Configuration.h
-    src/configuration/config_value.cpp src/configuration/config_value.h
     src/audio/capture/providers/audio_capture_provider.h
     src/audio/capture/providers/audio_capture_provider_system.h
     src/audio/capture/providers/audio_capture_provider_system.cpp
@@ -79,6 +78,7 @@ target_compile_definitions(${PROJECT_NAME} PRIVATE
 # --- Dependencies ---
 # Find vcpkg packages (requires CMAKE_TOOLCHAIN_FILE to be set)
 find_package(KissFFT CONFIG REQUIRED) # Find package without components
+find_package(nlohmann_json CONFIG REQUIRED)
 
 # Link Windows Libraries needed for WASAPI/COM
 target_link_libraries(${PROJECT_NAME} PRIVATE
@@ -93,6 +93,7 @@ target_link_libraries(${PROJECT_NAME} PRIVATE
 # Use kissfft-float linkage
 target_link_libraries(${PROJECT_NAME} PRIVATE
     kissfft::kissfft-float
+    nlohmann_json::nlohmann_json
 )
 
 # Fix LIBCMT conflict warning
