@@ -207,11 +207,13 @@ void cursor_to_right_for(float label_w_with_padding) {
 // Caller is responsible for the right-align cursor positioning and for
 // wrapping in PushID/PopID so the SmallButton's ID is unique per section.
 bool subtle_settings_toggle(bool& open) {
-    // Closed: " settings ·"   (· = U+00B7 MIDDLE DOT)
-    // Open:   " settings ●"   (● = U+25CF BLACK CIRCLE)
-    const char* label = open
-        ? "settings \xE2\x97\x8F"
-        : "settings \xC2\xB7";
+    // ImGui's default font ships only Latin-1 in its glyph atlas, so
+    // geometric-shape codepoints (U+25CF ● etc.) render as "?". The
+    // middle dot · (U+00B7) is in Latin-1 and renders fine; we use a
+    // plain ASCII '*' for the filled (open) state.
+    //   Closed: "settings ·"
+    //   Open:   "settings *"
+    const char* label = open ? "settings *" : "settings \xC2\xB7";
 
     const float w = ImGui::CalcTextSize(label).x
                   + ImGui::GetStyle().FramePadding.x * 2.0f;
@@ -398,13 +400,16 @@ const char* current_source_label(AudioSystem& system, const config::Settings& cf
 // ============================ Sections ===================================
 
 // ---- Audio Source -------------------------------------------------------
+//
+// Single row: title on the left, the Source dropdown filling the rest of
+// the line. The dropdown's selected text already names the active source,
+// so no separate hint or "Source:" body row is needed.
 
 static void section_audio_source(AudioSystem& system, config::Settings& cfg, bool&) {
-    const char* current_label = current_source_label(system, cfg);
-    char header_hint[96];
-    std::snprintf(header_hint, sizeof(header_hint), "%s \xE2\x80\xA2 %s",
-                   state_label(system.state()), current_label);
-    section_header_only("Audio Source", header_hint);
+    ImGui::Spacing();
+    ImGui::AlignTextToFramePadding();
+    ImGui::TextUnformatted("Audio Source");
+    ImGui::SameLine();
 
     const auto sources = system.available_sources();
     int current = 0;
@@ -417,7 +422,6 @@ static void section_audio_source(AudioSystem& system, config::Settings& cfg, boo
     for (auto& n : names) name_ptrs.push_back(n.c_str());
 
     int sel = current;
-    label_left("Source:");
     ImGui::PushItemWidth(-1);
     if (ImGui::Combo("##source_combo", &sel, name_ptrs.data(), (int)name_ptrs.size())
         && sel >= 0 && sel < (int)sources.size()) {
@@ -425,9 +429,11 @@ static void section_audio_source(AudioSystem& system, config::Settings& cfg, boo
     }
     ImGui::PopItemWidth();
     tip("Where Listeningway listens.\n"
-        "  \xE2\x80\xA2 System Audio: everything the speakers play.\n"
-        "  \xE2\x80\xA2 Game Audio Only: just this game (Win10 22H2+).\n"
-        "  \xE2\x80\xA2 None: turn analysis off.");
+        "  - System Audio: everything the speakers play.\n"
+        "  - Game Audio Only: just this game (Win10 22H2+).\n"
+        "  - None: turn analysis off.");
+
+    ImGui::Separator();
 }
 
 // ---- Levels -------------------------------------------------------------
@@ -473,7 +479,7 @@ static void section_beat(const AudioSnapshot& snap, config::Settings& cfg, bool&
     if (snap.tempo_detected) {
         std::snprintf(hint, sizeof(hint), "%.0f BPM", snap.tempo_bpm);
     } else {
-        std::snprintf(hint, sizeof(hint), "searching\xE2\x80\xA6");  // ellipsis
+        std::snprintf(hint, sizeof(hint), "searching...");
     }
     const bool show = section_header_with_settings("Beat Detection", hint, "beat");
 
@@ -486,7 +492,7 @@ static void section_beat(const AudioSnapshot& snap, config::Settings& cfg, bool&
                  snap.tempo_bpm, snap.tempo_confidence * 100.0f);
     } else {
         label_left("Tempo:");
-        ImGui::TextDisabled("searching\xE2\x80\xA6 (%.1f BPM, %.0f%% confidence)",
+        ImGui::TextDisabled("searching... (%.1f BPM, %.0f%% confidence)",
                             snap.tempo_bpm, snap.tempo_confidence * 100.0f);
     }
 
