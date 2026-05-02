@@ -88,16 +88,18 @@ REM No DLLs to copy for static build
 
 echo --- Build, Rename, and Move Successful ---
 
-REM Optionally deploy to LISTENINGWAY_DEPLOY_DIR. The deploy step is opt-in:
-REM set LISTENINGWAY_DEPLOY_DIR to a target directory (e.g. a game install) and
-REM build.bat will copy the built artifacts there. If the variable is unset,
-REM the deploy step is skipped silently.
+REM Default deploy target. Override by setting LISTENINGWAY_DEPLOY_DIR
+REM in your environment before running build.bat.
+if not defined LISTENINGWAY_DEPLOY_DIR (
+    set "LISTENINGWAY_DEPLOY_DIR=E:\Games\SquareEnix\FINAL FANTASY XIV - A Realm Reborn\game"
+)
+
+REM Auto-deploy to LISTENINGWAY_DEPLOY_DIR. deploy.bat will skip with a
+REM message if the path doesn't exist on this machine.
 if exist .\deploy.bat (
-    if defined LISTENINGWAY_DEPLOY_DIR (
-        echo.
-        echo --- Automatically deploying to %LISTENINGWAY_DEPLOY_DIR% ---
-        call .\deploy.bat
-    )
+    echo.
+    echo --- Automatically deploying to %LISTENINGWAY_DEPLOY_DIR% ---
+    call .\deploy.bat
 )
 
 endlocal
