@@ -85,15 +85,22 @@ void tip(const char* text) {
 }
 
 // Right-align the label so its right edge sits kLabelGap pixels to the left
-// of g_label_col. Then SameLine over to g_label_col so the bar starts there.
+// of g_label_col. Then jump to g_label_col so the bar starts there.
 // Colons are no longer expected in the label text.
+//
+// Uses SetCursorPosX rather than SameLine(g_label_col) for the bar-column
+// jump because SameLine(N) inside an active BeginGroup adds the group's
+// X-offset to N, double-counting and pushing the bar far past the
+// intended column. SetCursorPosX is group-offset-agnostic and treats its
+// argument as an absolute window-content-relative position.
 void label_left(const char* label) {
     ImGui::AlignTextToFramePadding();
     const float label_w = ImGui::CalcTextSize(label).x;
     const float target_x = g_label_col - kLabelGap - label_w;
     if (target_x > ImGui::GetCursorPosX()) ImGui::SetCursorPosX(target_x);
     ImGui::TextUnformatted(label);
-    ImGui::SameLine(g_label_col);
+    ImGui::SameLine();
+    ImGui::SetCursorPosX(g_label_col);
 }
 
 // ---- Row helpers (unchanged semantics) ---------------------------------
