@@ -133,6 +133,8 @@ add_library(${PROJECT_NAME} SHARED
     src/output/openrgb_patterns/pattern_common.cpp
     src/output/openrgb_patterns/single_patterns.h
     src/output/openrgb_patterns/single_patterns.cpp
+    src/output/openrgb_patterns/linear_patterns.h
+    src/output/openrgb_patterns/linear_patterns.cpp
 
     # Overlay (ImGui)
     src/overlay/overlay.h
