@@ -24,80 +24,27 @@
 #include "../config/settings.h"
 #include "../config/store.h"
 #include "../util/log.h"
+#include "openrgb_patterns/linear_patterns.h"
+#include "openrgb_patterns/matrix_patterns.h"
+#include "openrgb_patterns/pattern_common.h"
+#include "openrgb_patterns/single_patterns.h"
 
 namespace lw::output {
 
 namespace {
 
-/// Bass→treble color ramp. t in [0, 1].
-orgb::Color ramp_color(float t) {
-    t = std::clamp(t, 0.0f, 1.0f);
-    // Five-stop palette: blue → cyan → green → yellow → red.
-    static constexpr float stops[5][3] = {
-        {0.10f, 0.20f, 1.00f}, // blue
-        {0.10f, 1.00f, 1.00f}, // cyan
-        {0.10f, 1.00f, 0.30f}, // green
-        {1.00f, 1.00f, 0.10f}, // yellow
-        {1.00f, 0.20f, 0.10f}, // red
-    };
-    const float scaled = t * 4.0f;
-    const int   lo = static_cast<int>(std::floor(scaled));
-    const int   hi = std::min(lo + 1, 4);
-    const float frac = scaled - static_cast<float>(lo);
-    const float r = stops[lo][0] * (1 - frac) + stops[hi][0] * frac;
-    const float g = stops[lo][1] * (1 - frac) + stops[hi][1] * frac;
-    const float b = stops[lo][2] * (1 - frac) + stops[hi][2] * frac;
-    return orgb::Color{
-        static_cast<uint8_t>(std::clamp(r * 255.0f, 0.0f, 255.0f)),
-        static_cast<uint8_t>(std::clamp(g * 255.0f, 0.0f, 255.0f)),
-        static_cast<uint8_t>(std::clamp(b * 255.0f, 0.0f, 255.0f)),
-    };
+/// Convert our internal RGB to the SDK's color type at the boundary.
+inline orgb::Color to_orgb(patterns::ColorRgb c) noexcept {
+    return orgb::Color{c.r, c.g, c.b};
 }
 
-/// Build a per-LED color buffer for a device of `led_count` LEDs from the
-/// audio snapshot. Default mapping: spread freqbands across the LEDs as a
-/// spectrum, modulated by volume_norm and beat, with the configured
-/// brightness multiplier.
-std::vector<orgb::Color> compose_frame(const AudioSnapshot& snap,
-                                        size_t led_count,
-                                        float brightness) {
-    std::vector<orgb::Color> out(led_count);
-    if (led_count == 0) return out;
-
-    const size_t nb = std::min<size_t>(snap.freq_band_count, kMaxBands);
-    const float  beat_flash = std::clamp(snap.beat, 0.0f, 1.0f);
-    // volume_norm is AGC-normalized around 1.0 (clamped 0..~4); soften it.
-    const float  vol = std::clamp(snap.volume_norm * 0.5f, 0.0f, 1.5f);
-    const float  bright = std::clamp(brightness, 0.0f, 1.0f);
-
-    for (size_t i = 0; i < led_count; ++i) {
-        // Position in spectrum, 0..1.
-        const float t = led_count <= 1 ? 0.5f
-                       : static_cast<float>(i) / static_cast<float>(led_count - 1);
-
-        // Sample freqbands at this position. If we have no bands, fall back
-        // to a flat volume color.
-        float band_val = 0.0f;
-        if (nb > 0) {
-            const float src_idx = t * static_cast<float>(nb - 1);
-            const int   lo = static_cast<int>(std::floor(src_idx));
-            const int   hi = std::min(lo + 1, static_cast<int>(nb) - 1);
-            const float frac = src_idx - static_cast<float>(lo);
-            band_val = snap.freq_bands[lo] * (1 - frac) + snap.freq_bands[hi] * frac;
-        }
-
-        // Color: ramp by spectrum position, intensity by band amplitude × volume.
-        orgb::Color c = ramp_color(t);
-        const float intensity = std::clamp(
-            (band_val * 1.5f + vol * 0.3f + beat_flash * 0.4f) * bright,
-            0.0f, 1.0f);
-        c.r = static_cast<uint8_t>(c.r * intensity);
-        c.g = static_cast<uint8_t>(c.g * intensity);
-        c.b = static_cast<uint8_t>(c.b * intensity);
-        out[i] = c;
-    }
-    return out;
-}
+/// Per-device working buffer: full LED color array, plus one PatternState
+/// per zone. Lives across frames so stateful patterns (VU peak hold,
+/// spectrogram waterfall) can carry history.
+struct DeviceFrame {
+    std::vector<orgb::Color>           leds;
+    std::vector<patterns::PatternState> zone_states;
+};
 
 }  // namespace
 
@@ -300,11 +247,13 @@ void OpenRgbConsumer::worker_main() {
                           + std::to_string(reported_count);
         }
 
-        // Switch each device to custom mode so direct LED writes take effect.
+        // Tally non-empty zones by type for the UI counters.
+        int n_single = 0, n_linear = 0, n_matrix = 0;
         size_t dev_idx = 0;
         for (const auto& dev : devices_result.devices) {
-            log::info("openrgb: device[%zu]=\"%s\" leds=%zu",
-                      dev_idx++, dev.name.c_str(), dev.leds.size());
+            log::info("openrgb: device[%zu]=\"%s\" leds=%zu zones=%zu",
+                      dev_idx++, dev.name.c_str(), dev.leds.size(),
+                      dev.zones.size());
             const auto rs = client.switchToCustomMode(dev);
             if (rs != orgb::RequestStatus::Success) {
                 const std::string ms = orgb::enumString(rs);
@@ -314,7 +263,22 @@ void OpenRgbConsumer::worker_main() {
                 last_error_ = std::string("switchToCustomMode failed for ")
                               + dev.name + ": " + ms;
             }
+            for (const auto& zone : dev.zones) {
+                if (zone.leds_count == 0) continue;
+                switch (zone.type) {
+                    case orgb::ZoneType::Single: ++n_single; break;
+                    case orgb::ZoneType::Linear: ++n_linear; break;
+                    case orgb::ZoneType::Matrix: ++n_matrix; break;
+                }
+                log::info("openrgb:   zone[%u]=\"%s\" type=%s leds=%u (matrix=%ux%u)",
+                          zone.idx, zone.name.c_str(),
+                          orgb::enumString(zone.type),
+                          zone.leds_count, zone.matrix_width, zone.matrix_height);
+            }
         }
+        count_single_.store(n_single);
+        count_linear_.store(n_linear);
+        count_matrix_.store(n_matrix);
         return true;
     };
 
@@ -327,8 +291,25 @@ void OpenRgbConsumer::worker_main() {
     }
     refresh_devices();
 
+    // Per-device working storage: parallel to devices_result.devices,
+    // resized whenever refresh_devices() runs. Holds the assembled
+    // per-LED color array and one PatternState per zone (so stateful
+    // patterns — VU peak hold, spectrogram waterfall — carry history
+    // across frames).
+    std::vector<DeviceFrame> dev_frames;
+    auto resize_dev_frames = [&]() {
+        dev_frames.assign(devices_result.devices.size(), DeviceFrame{});
+        for (uint32_t i = 0; i < devices_result.devices.size(); ++i) {
+            const auto& dev = devices_result.devices[i];
+            dev_frames[i].leds.assign(dev.leds.size(), orgb::Color{});
+            dev_frames[i].zone_states.assign(dev.zones.size(), patterns::PatternState{});
+        }
+    };
+    resize_dev_frames();
+
     uint64_t cached_settings_version = store_->version();
     auto next_tick = std::chrono::steady_clock::now();
+    auto last_frame_t = std::chrono::steady_clock::now();
     int  ticks_since_update_check = 0;
 
     while (running_.load(std::memory_order_relaxed)) {
@@ -358,6 +339,7 @@ void OpenRgbConsumer::worker_main() {
             const auto u = client.checkForDeviceUpdates();
             if (u == orgb::UpdateStatus::OutOfDate) {
                 refresh_devices();
+                resize_dev_frames();
             } else if (u == orgb::UpdateStatus::ConnectionClosed
                     || u == orgb::UpdateStatus::OtherSystemError) {
                 record_error("server connection lost; will retry");
@@ -367,15 +349,78 @@ void OpenRgbConsumer::worker_main() {
                     continue;
                 }
                 refresh_devices();
+                resize_dev_frames();
             }
         }
 
-        const auto snap = system_->snapshot();
+        // dt for stateful patterns (VU peak hold, etc).
+        const auto now_t = std::chrono::steady_clock::now();
+        const float dt_sec = std::clamp(
+            std::chrono::duration<float>(now_t - last_frame_t).count(),
+            0.001f, 0.250f);
+        last_frame_t = now_t;
+
+        const auto snap        = system_->snapshot();
+        const auto cur_cfg     = store_->snapshot().network.openrgb;
+        const float brightness = cur_cfg.brightness;
+
         bool any_failed = false;
-        for (const auto& dev : devices_result.devices) {
+        for (uint32_t di = 0; di < devices_result.devices.size(); ++di) {
+            const auto& dev = devices_result.devices[di];
             if (dev.leds.empty()) continue;
-            auto frame = compose_frame(snap, dev.leds.size(), cfg.brightness);
-            const auto rs = client.setDeviceColors(dev, frame);
+            auto& dframe = dev_frames[di];
+            // Defensive: refresh_devices() should keep these in sync, but
+            // re-shape if the caller dropped the ball somewhere.
+            if (dframe.leds.size() != dev.leds.size())
+                dframe.leds.assign(dev.leds.size(), orgb::Color{});
+            if (dframe.zone_states.size() != dev.zones.size())
+                dframe.zone_states.assign(dev.zones.size(), patterns::PatternState{});
+
+            // Render each zone into its slice of the device LED array.
+            // OpenRGB lays out LEDs per device in zone order: zone[0]'s
+            // LEDs come first, then zone[1]'s, etc.
+            std::vector<patterns::ColorRgb> zone_buf;
+            size_t led_offset = 0;
+            for (size_t zi = 0; zi < dev.zones.size(); ++zi) {
+                const auto& zone = dev.zones[zi];
+                const size_t n = zone.leds_count;
+                if (n == 0) continue;
+                zone_buf.assign(n, patterns::ColorRgb::black());
+                std::span<patterns::ColorRgb> out(zone_buf.data(), n);
+
+                switch (zone.type) {
+                    case orgb::ZoneType::Single: {
+                        const auto c = patterns::render_single(
+                            cur_cfg.pattern_single, snap, dframe.zone_states[zi], brightness);
+                        std::fill(out.begin(), out.end(), c);
+                        break;
+                    }
+                    case orgb::ZoneType::Linear:
+                        patterns::render_linear(
+                            cur_cfg.pattern_linear, snap, out,
+                            dframe.zone_states[zi], brightness, dt_sec);
+                        break;
+                    case orgb::ZoneType::Matrix:
+                        patterns::render_matrix(
+                            cur_cfg.pattern_matrix, snap,
+                            patterns::MatrixGeometry{
+                                zone.matrix_width, zone.matrix_height,
+                                std::span<const uint32_t>(zone.matrix_values.data(),
+                                                           zone.matrix_values.size()),
+                            },
+                            out, dframe.zone_states[zi], brightness, dt_sec);
+                        break;
+                }
+
+                // Copy zone buffer into the device-wide LED array at the
+                // correct offset.
+                for (size_t i = 0; i < n && led_offset + i < dframe.leds.size(); ++i) {
+                    dframe.leds[led_offset + i] = to_orgb(out[i]);
+                }
+                led_offset += n;
+            }
+
+            const auto rs = client.setDeviceColors(dev, dframe.leds);
             if (rs != orgb::RequestStatus::Success) {
                 any_failed = true;
                 if (rs == orgb::RequestStatus::ConnectionClosed) {
@@ -396,6 +441,7 @@ void OpenRgbConsumer::worker_main() {
             try_connect();
             if (client.isConnected()) {
                 refresh_devices();
+                resize_dev_frames();
             }
         }
     }

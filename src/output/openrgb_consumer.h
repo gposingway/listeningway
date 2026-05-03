@@ -66,12 +66,22 @@ private:
     // toggle in settings should follow.
     std::atomic<bool> wants_disarm_{false};
 
+    // Per-zone-type counts (only non-empty zones counted). Surfaced by
+    // the overlay UI so users can see "1 single, 1 linear, 1 matrix"
+    // alongside their pattern dropdowns.
+    int count_single() const noexcept { return count_single_.load(); }
+    int count_linear() const noexcept { return count_linear_.load(); }
+    int count_matrix() const noexcept { return count_matrix_.load(); }
+
     // Status — read from any thread.
     mutable std::mutex    status_mutex_;
     std::string           current_dest_;       ///< "host:port"
     int                   current_rate_hz_ = 0;
     std::atomic<uint64_t> frames_sent_{0};
     std::atomic<int>      device_count_{0};
+    std::atomic<int>      count_single_{0};
+    std::atomic<int>      count_linear_{0};
+    std::atomic<int>      count_matrix_{0};
     std::string           last_error_;
     bool                  connected_ = false;
 };
