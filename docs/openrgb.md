@@ -59,6 +59,7 @@ The integration is designed to recover automatically rather than need manual res
 - **Server crashes or restarts mid-session.** The status line shows "server connection lost; will retry" and Listeningway reconnects automatically once the server is back. Devices are re-discovered on reconnect.
 - **Hot-plug.** New devices added or removed while Listeningway is running are picked up within a couple of seconds; no manual refresh needed.
 - **Custom-mode unavailable on one device.** Some devices expose a custom mode that's hard to reach from OpenRGB. Listeningway keeps painting the rest; the troublesome device is left in whatever mode it was already in.
+- **A device shows up but doesn't physically respond.** You may notice that a peripheral appears in OpenRGB and gets reported correctly in Listeningway's status line, yet the LEDs don't react to anything — not to OpenRGB's own colour wheel, not to Listeningway, not to anything. This is sometimes a firmware-stuck state where the device has locked itself into an onboard profile that ignores host commands; it isn't specific to Listeningway and isn't an OpenRGB bug. One possible solution that's known to help on some Roccat keyboards (e.g. the Vulcan Pro): install the vendor's software (Roccat Swarm, in that case), use its **Reset to Factory Defaults** option once, then close it. After that the device usually responds to OpenRGB and Listeningway normally; the vendor software can be uninstalled afterward if you don't want it sitting around.
 
 ## Limitations
 
