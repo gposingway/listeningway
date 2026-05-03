@@ -4,7 +4,14 @@
 
 **Real-time audio analysis DSP add-on for ReShade**
 
-![Listeningway Showcase](https://github.com/user-attachments/assets/8a11d6b6-bdea-4c31-9614-dbfb7ad8819f)
+![Listeningway Showcase](https://github.com/user-attachments/assets/07a324e2-46a8-4a36-88ab-3a57e5e4db70)
+![Listeningway Showcase](https://github.com/user-attachments/assets/a474e86f-805b-4726-948b-dac4a6207e13)
+
+
+
+
+
+
 
 [<img src="https://github.com/user-attachments/assets/20794810-9e43-4167-bb0e-faf46275186e">](https://github.com/gposingway/Listeningway/releases/latest)
 
