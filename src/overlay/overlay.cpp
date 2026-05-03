@@ -228,27 +228,6 @@ public:
     TightRowSpacing& operator=(const TightRowSpacing&) = delete;
 };
 
-// RAII: scope a narrower bar-start column when a section's labels are
-// shorter than the overlay-wide widest probe. By default g_label_col is
-// computed from probes like "Smoothing release (ms)", which leaves a huge
-// dead zone before the bars when the actual labels are tiny ("F", "BR").
-// This helper recomputes g_label_col from the supplied labels at the
-// current cursor position, then restores it on scope exit.
-class LocalLabelColumn {
-public:
-    LocalLabelColumn(std::span<const char* const> labels) : prev_(g_label_col) {
-        float widest = 0.0f;
-        for (const char* l : labels) widest = std::max(widest, ImGui::CalcTextSize(l).x);
-        g_label_col = ImGui::GetCursorPosX() + widest
-                    + ImGui::GetStyle().ItemSpacing.x + kLabelGap;
-    }
-    ~LocalLabelColumn() { g_label_col = prev_; }
-    LocalLabelColumn(const LocalLabelColumn&)            = delete;
-    LocalLabelColumn& operator=(const LocalLabelColumn&) = delete;
-private:
-    float prev_;
-};
-
 // Right-align cursor for a label of given pixel width.
 void cursor_to_right_for(float label_w_with_padding) {
     const float right_x = ImGui::GetWindowContentRegionMax().x - label_w_with_padding;
@@ -687,13 +666,19 @@ static void section_levels(const AudioSnapshot& snap, config::Settings& cfg, boo
     const float vol_amp = cfg.frequency.amplifier_volume;
     const ImU32 fill = ImGui::GetColorU32(ImGuiCol_PlotHistogram);
 
-    meter_row("Volume", std::clamp(snap.volume * vol_amp, 0.0f, 1.0f), fill);
+    {
+        TightRowSpacing tight;
+        meter_row("Volume", std::clamp(snap.volume * vol_amp, 0.0f, 1.0f), fill);
+    }
 
     subgroup_label("Stereo:");
     ImGui::Indent(kSubGroupIndent);
-    meter_row("Left",  std::clamp(snap.volume_left  * vol_amp, 0.0f, 1.0f), fill);
-    meter_row("Right", std::clamp(snap.volume_right * vol_amp, 0.0f, 1.0f), fill);
-    center_meter_row("Pan", snap.audio_pan);
+    {
+        TightRowSpacing tight;
+        meter_row("Left",  std::clamp(snap.volume_left  * vol_amp, 0.0f, 1.0f), fill);
+        meter_row("Right", std::clamp(snap.volume_right * vol_amp, 0.0f, 1.0f), fill);
+        center_meter_row("Pan", snap.audio_pan);
+    }
     ImGui::Unindent(kSubGroupIndent);
 
     if (show) {
@@ -726,15 +711,18 @@ static void section_beat(const AudioSnapshot& snap, config::Settings& cfg, bool&
 
     const ImU32 fill = ImGui::GetColorU32(ImGuiCol_PlotHistogram);
 
-    meter_row("Beat",          std::clamp(snap.beat,       0.0f, 1.0f), fill);
-    meter_row("Beat position", std::clamp(snap.beat_phase, 0.0f, 1.0f), fill);
-    if (snap.tempo_detected) {
-        info_row("Tempo", "%.1f BPM (%.0f%% confidence)",
-                 snap.tempo_bpm, snap.tempo_confidence * 100.0f);
-    } else {
-        label_left("Tempo");
-        ImGui::TextDisabled("searching... (%.1f BPM, %.0f%% confidence)",
-                            snap.tempo_bpm, snap.tempo_confidence * 100.0f);
+    {
+        TightRowSpacing tight;
+        meter_row("Beat",          std::clamp(snap.beat,       0.0f, 1.0f), fill);
+        meter_row("Beat position", std::clamp(snap.beat_phase, 0.0f, 1.0f), fill);
+        if (snap.tempo_detected) {
+            info_row("Tempo", "%.1f BPM (%.0f%% confidence)",
+                     snap.tempo_bpm, snap.tempo_confidence * 100.0f);
+        } else {
+            label_left("Tempo");
+            ImGui::TextDisabled("searching... (%.1f BPM, %.0f%% confidence)",
+                                snap.tempo_bpm, snap.tempo_confidence * 100.0f);
+        }
     }
 
     if (show) {
@@ -930,12 +918,15 @@ static void section_spatial(const AudioSnapshot& snap, config::Settings& cfg, bo
     const char* const labels[8] = { "F", "FR", "R", "BR", "B", "BL", "L", "FL" };
     const ImU32 fill = ImGui::GetColorU32(ImGuiCol_PlotHistogram);
 
-    // Sized to match the bar column under TightRowSpacing: 8 rows × ~14 px
-    // each plus a small margin so the rose's vertical extent aligns with
-    // the column.
+    // Save the section's top so the bars can rewind to it after the rose
+    // claims its vertical space. The rose sits in the left column (X = 0
+    // to ~120 px), the bar labels right-align at the global g_label_col
+    // (~155 px), and the bars themselves run full-width like every other
+    // meter section. No BeginGroup needed.
     constexpr float kRoseSide = 120.0f;
     constexpr float kLabelMargin = 9.0f;     // extra padding outside the rose for cardinal labels
     const float side = kRoseSide;
+    const float section_top_y = ImGui::GetCursorPosY();
     const ImVec2 origin = ImGui::GetCursorScreenPos();
     const ImVec2 center(origin.x + side * 0.5f, origin.y + side * 0.5f);
     const float radius = side * 0.5f - kLabelMargin;
@@ -971,17 +962,29 @@ static void section_spatial(const AudioSnapshot& snap, config::Settings& cfg, bo
         dl->AddText(ImVec2(lx, ly), cardinal_col, labels[i]);
     }
 
+    // Claim the rose's vertical/horizontal extent for layout purposes.
     ImGui::Dummy(ImVec2(side, side));
+    const float after_rose_y = ImGui::GetCursorPosY();
 
-    ImGui::SameLine();
+    // Rewind to the section top and draw the bars using the standard
+    // meter_row layout (full-width, labels right-aligned at g_label_col).
+    // Because g_label_col sits well past the rose's right edge, the bars
+    // and the rose visually sit side-by-side without any group / SameLine
+    // gymnastics.
+    ImGui::SetCursorPosY(section_top_y);
     {
         TightRowSpacing tight;
-        LocalLabelColumn col(std::span<const char* const>{labels, 8});
-        ImGui::BeginGroup();
         for (int i = 0; i < 8; ++i) {
-            meter_row(labels[i], std::clamp(snap.direction8[i] * dir_amp, 0.0f, 1.0f), fill, "%.2f");
+            meter_row(labels[i],
+                      std::clamp(snap.direction8[i] * dir_amp, 0.0f, 1.0f),
+                      fill, "%.2f");
         }
-        ImGui::EndGroup();
+    }
+
+    // The rose is taller than 8 tight rows, so push the cursor down past
+    // it before the next sub-section draws.
+    if (after_rose_y > ImGui::GetCursorPosY()) {
+        ImGui::SetCursorPosY(after_rose_y);
     }
 
     if (show) {
