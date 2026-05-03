@@ -67,16 +67,7 @@ void Store::clamp_in_place(Settings& s) const {
     s.audio.pan_smoothing = std::clamp(s.audio.pan_smoothing, 0.0f, 1.0f);
     s.audio.pan_offset    = std::clamp(s.audio.pan_offset,   -1.0f, 1.0f);
 
-    s.beat.algorithm           = std::clamp(s.beat.algorithm, 0, 1);
-    s.beat.threshold_lambda    = std::clamp(s.beat.threshold_lambda, 0.0f, 5.0f);
-    s.beat.threshold_window_ms = std::clamp(s.beat.threshold_window_ms, 10.0f, 1000.0f);
-    s.beat.refractory_ms       = std::clamp(s.beat.refractory_ms, 5.0f, 500.0f);
-    s.beat.phase_kp            = std::clamp(s.beat.phase_kp, 0.0f, 1.0f);
-    s.beat.phase_ki            = std::clamp(s.beat.phase_ki, 0.0f, 0.5f);
-    s.beat.tempo_prior_bpm     = std::clamp(s.beat.tempo_prior_bpm, 40.0f, 240.0f);
-    s.beat.tempo_prior_sigma   = std::clamp(s.beat.tempo_prior_sigma, 0.1f, 3.0f);
-    s.beat.tempo_window_sec    = std::clamp(s.beat.tempo_window_sec, 1.0f, 30.0f);
-    s.beat.beat_decay_per_sec  = std::clamp(s.beat.beat_decay_per_sec, 0.1f, 10.0f);
+    s.beat.pulse_strength = std::clamp(s.beat.pulse_strength, 0.0f, 3.0f);
 
     s.frequency.band_count    = std::clamp(s.frequency.band_count, 8, 128);
     s.frequency.fft_size      = std::clamp(s.frequency.fft_size, 128, 16384);

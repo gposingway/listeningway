@@ -18,11 +18,7 @@ NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE_WITH_DEFAULT(AudioConfig,
     pan_smoothing, pan_offset)
 
 NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE_WITH_DEFAULT(BeatConfig,
-    algorithm, profile,
-    threshold_lambda, threshold_window_ms, refractory_ms,
-    phase_kp, phase_ki,
-    tempo_prior_bpm, tempo_prior_sigma, tempo_window_sec,
-    beat_decay_per_sec)
+    pulse_strength)
 
 NLOHMANN_JSON_SERIALIZE_ENUM(FrequencyConfig::BandScale, {
     {FrequencyConfig::BandScale::Linear, "linear"},

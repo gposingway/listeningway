@@ -30,26 +30,19 @@ struct AudioConfig {
 };
 
 /// Beat / tempo detection tunables.
+///
+/// Single user-facing knob. The detector inside (multi-band onset
+/// aggregation with adaptive thresholds + smooth pulse curve + tempo
+/// autocorrelation as instrumentation) is fully auto-tuned from the
+/// running AGC window and per-band flux baselines. `pulse_strength`
+/// biases the adaptive threshold so users can dial visual reactivity
+/// up or down without thinking about gains, refractory windows, or
+/// PLL constants.
 struct BeatConfig {
-    int   algorithm   = 1;        ///< 0 = simple-energy, 1 = autocorrelation
-    std::string profile = "general";  // "general" | "edm" | "acoustic" | "custom"
-
-    // Threshold (aubio formula: median + lambda * mean)
-    float threshold_lambda     = 0.10f;
-    float threshold_window_ms  = 60.0f;   ///< total span, 5 past + 1 future-ish
-    float refractory_ms        = 50.0f;
-
-    // PLL phase correction
-    float phase_kp = 0.15f;       ///< phase pull on detected onset
-    float phase_ki = 0.01f;       ///< BPM drift correction
-
-    // Tempo prior (log-Gaussian on autocorrelation peaks)
-    float tempo_prior_bpm   = 120.0f;
-    float tempo_prior_sigma = 0.7f;   ///< octaves
-    float tempo_window_sec  = 8.0f;   ///< autocorrelation history
-
-    // Decay envelope for `beat` uniform once detected.
-    float beat_decay_per_sec = 1.2f;  ///< spike to 1.0, decay at this rate
+    /// 0 = no triggers, 1 = balanced default, > 1 = more reactive.
+    /// Internally maps to an inverse threshold multiplier on the
+    /// per-band sigma-above-baseline onset criterion.
+    float pulse_strength = 1.0f;
 };
 
 /// Frequency-domain tunables.

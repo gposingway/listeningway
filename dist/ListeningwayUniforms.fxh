@@ -15,7 +15,11 @@
 
 #define LISTENINGWAY_NUM_BANDS 64
 #define LISTENINGWAY_VOLUME_HISTORY_FRAMES 64
-#define LISTENINGWAY_FREQBANDS_HISTORY_FRAMES 64
+// 32 frames keeps NUM_BANDS × frames × 4 bytes within the D3D11 constant
+// buffer cap (max 4096 float4 slots) at the default 64 bands, with room
+// to spare for the rest of the Listeningway uniforms and any user
+// additions. ~0.5 s of history at 60 fps; ~1 s at 30 fps.
+#define LISTENINGWAY_FREQBANDS_HISTORY_FRAMES 32
 #define LISTENINGWAY_INSTALLED 1
 
 // =========================================================================
@@ -103,10 +107,10 @@ uniform float Listeningway_PhaseBass       < source = "listeningway_phase_bass";
 uniform float Listeningway_PhaseTreble     < source = "listeningway_phase_treble"; >;
 
 // Trail / waterfall sources. Layout:
-//   VolumeHistory: oldest at index 0, newest at index 63.
+//   VolumeHistory: oldest at index 0, newest at index VOLUME_HISTORY_FRAMES-1.
 //   FreqBandsHistory: band-major, time-ascending. Index helper:
-//       freqbands_history[band * 64 + frame]
-//   frame=0 is oldest, frame=63 is newest. Active band axis = NumBands.
+//       freqbands_history[band * LISTENINGWAY_FREQBANDS_HISTORY_FRAMES + frame]
+//   frame=0 is oldest. Active band axis = NumBands.
 uniform float Listeningway_VolumeHistory[LISTENINGWAY_VOLUME_HISTORY_FRAMES]
     < source = "listeningway_volume_history"; >;
 uniform float Listeningway_FreqBandsHistory

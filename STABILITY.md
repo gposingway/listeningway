@@ -29,7 +29,7 @@ uniform float Listeningway_FreqBands[64] < source = "listeningway_freqbands"; >;
 | `listeningway_audioformat` | `float` | {0, 1, 2, 6, 8} | v1 | Stable | Channel count as float. 0 = no audio. |
 | `listeningway_freqbands` | `float[N]` | [0, 1] each | v1 | Stable | Post-EQ frequency band amplitudes. N = `listeningway_numbands`. |
 | `listeningway_numbands` | `float` | [8, 128] | v1 | Stable | Live band count published. Cap is `kMaxBands` (128). |
-| `listeningway_beat` | `float` | [0, 1] | v1 | Stable | 1.0 on detected onset, decays at config rate. |
+| `listeningway_beat` | `float` | [0, 1] | v1 | Stable | Continuous pulse curve. Each detected onset attacks instantly to a strength in [0, 1] (graded by how loudly the onset stood out from its band's recent baseline) and decays exponentially with a ~150 ms time constant. Replaces the v1 binary spike-and-linear-decay behaviour; the numerical range is unchanged. |
 | `listeningway_timeseconds` | `float` | seconds | v1 | Stable | Wall-clock seconds since addon load. |
 | `listeningway_timephase60hz` | `float` | [0, 1) | v1 | Stable | `fmod(t * 60, 1)`. |
 | `listeningway_timephase120hz` | `float` | [0, 1) | v1 | Stable | `fmod(t * 120, 1)`. |

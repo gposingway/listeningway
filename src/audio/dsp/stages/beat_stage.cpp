@@ -6,14 +6,64 @@
 
 namespace lw::dsp {
 
+namespace {
+
+// --- Internal constants (no UI exposure) ---------------------------------
+
+// Per-band baseline / variance EMA. ~30-frame time constant, so a sustained
+// loud passage lifts the baseline and we stop spuriously firing.
+constexpr float kBaselineAlpha = 0.97f;
+
+// Per-band threshold = baseline + N · sigma. N is computed as
+// kSigmaBase / pulse_strength so pulse_strength = 1 yields the balanced
+// default and higher strength lowers N (more triggers).
+constexpr float kSigmaBase = 3.0f;
+
+// Sigma multiples to map (flux - threshold) into onset strength [0, 1].
+// Two sigmas above threshold = max strength.
+constexpr float kStrengthScale = 2.0f;
+
+// Per-band weights when aggregating: bass dominates, treble accents.
+constexpr float kWeightLow  = 1.00f;
+constexpr float kWeightMid  = 0.70f;
+constexpr float kWeightHigh = 0.50f;
+
+// Refractory: minimum gap between onsets to avoid rapid re-trigger.
+// 80 ms accommodates fast genres (~750 BPM cap) without flickering.
+constexpr float kRefractorySec = 0.080f;
+
+// Smooth release of the beat curve. tau ~ 150 ms reads as a clean pulse.
+constexpr float kDecayTauSec = 0.150f;
+
+// --- Tempo / phase internals ---------------------------------------------
+
+constexpr float kEnvFps         = 100.0f;       // envelope sample rate
+constexpr float kBpmMin         = 60.0f;        // tempo search lower bound
+constexpr float kBpmMax         = 180.0f;       // one octave to mitigate octave errors
+constexpr float kTempoPriorBpm  = 120.0f;       // log-Gaussian prior centre
+constexpr float kTempoPriorSig  = 0.7f;         // octaves
+constexpr float kPhaseKp        = 0.15f;        // phase pull on confident onset
+constexpr float kPhaseKi        = 0.01f;        // BPM drift correction
+
+float onset_strength(float flux, float baseline, float var, float n_sigma) {
+    const float stddev    = std::sqrt(std::max(var, 1e-12f));
+    const float threshold = baseline + n_sigma * stddev;
+    if (flux <= threshold) return 0.0f;
+    return std::clamp(
+        (flux - threshold) / std::max(stddev, 1e-6f) / kStrengthScale,
+        0.0f, 1.0f);
+}
+
+}  // namespace
+
 void BeatStage::reset() {
-    envelope_.clear();
-    env_head_ = env_size_ = 0;
-    thresh_window_.clear();
-    thresh_head_ = 0;
+    baseline_low_ = baseline_mid_ = baseline_high_ = 0.0f;
+    var_low_ = var_mid_ = var_high_ = 0.0f;
     beat_value_ = 0.0f;
     last_t_ = {};
     last_onset_t_ = {};
+    envelope_.clear();
+    env_head_ = env_size_ = 0;
     tempo_bpm_ = 0.0f;
     tempo_confidence_ = 0.0f;
     tempo_detected_ = false;
@@ -21,34 +71,7 @@ void BeatStage::reset() {
     frames_since_tempo_update_ = 0;
 }
 
-bool BeatStage::detect_onset(float flux, const config::BeatConfig& bc) {
-    // Maintain a sliding threshold window. Aubio formula:
-    //   threshold = median(window) + λ · mean(window)
-    // Window length derived from threshold_window_ms; frame rate is the
-    // process() call rate (the source's typical_frame_count drives this).
-    // We approximate frame rate as 100 Hz; window in samples = ms / 10.
-    const size_t target_w = std::max<size_t>(
-        4, static_cast<size_t>(bc.threshold_window_ms * 0.1f));
-    if (thresh_window_.size() < target_w) {
-        thresh_window_.resize(target_w, 0.0f);
-        thresh_head_ = 0;
-    }
-    thresh_window_[thresh_head_] = flux;
-    thresh_head_ = (thresh_head_ + 1) % thresh_window_.size();
-
-    // Compute median + mean.
-    std::vector<float> sorted = thresh_window_;
-    std::sort(sorted.begin(), sorted.end());
-    const float median = sorted[sorted.size() / 2];
-    float mean = 0.0f;
-    for (float v : thresh_window_) mean += v;
-    mean /= static_cast<float>(thresh_window_.size());
-
-    const float threshold = median + bc.threshold_lambda * mean;
-    return flux > threshold;
-}
-
-void BeatStage::update_tempo(const config::BeatConfig& bc) {
+void BeatStage::update_tempo() {
     if (env_size_ < 32) {
         tempo_bpm_ = 0.0f;
         tempo_confidence_ = 0.0f;
@@ -56,27 +79,20 @@ void BeatStage::update_tempo(const config::BeatConfig& bc) {
         return;
     }
 
-    // Linearize the envelope into a contiguous span for autocorrelation.
+    // Linearise the envelope ring for autocorrelation.
     std::vector<float> env(env_size_);
     for (size_t i = 0; i < env_size_; ++i) {
         const size_t idx = (env_head_ + kEnvCapacity - env_size_ + i) % kEnvCapacity;
         env[i] = envelope_[idx];
     }
-    // Subtract mean so zero-flux regions don't bias the autocorrelation.
     float mean = 0.0f;
     for (float v : env) mean += v;
     mean /= static_cast<float>(env.size());
     for (float& v : env) v -= mean;
 
-    // Sample rate of the envelope ≈ 100 Hz (one entry per process call,
-    // assuming ~10 ms hops on typical loopback).
-    constexpr float kEnvFps = 100.0f;
-    // Search BPM range 50..220.
-    constexpr float kBpmMin = 50.0f;
-    constexpr float kBpmMax = 220.0f;
     const int lag_min = static_cast<int>(60.0f * kEnvFps / kBpmMax);
     const int lag_max = std::min(static_cast<int>(60.0f * kEnvFps / kBpmMin),
-                                 static_cast<int>(env.size() - 1));
+                                  static_cast<int>(env.size() - 1));
     if (lag_min >= lag_max) {
         tempo_bpm_ = 0.0f;
         tempo_confidence_ = 0.0f;
@@ -84,22 +100,17 @@ void BeatStage::update_tempo(const config::BeatConfig& bc) {
         return;
     }
 
-    const float prior_bpm = bc.tempo_prior_bpm;
-    const float sigma_oct = std::max(0.1f, bc.tempo_prior_sigma);
-
-    // Autocorrelation with log-Gaussian tempo prior.
-    float best_score = 0.0f;
+    float best_score = 0.0f, second_best = 0.0f;
     int best_lag = lag_min;
-    float second_best = 0.0f;
     for (int lag = lag_min; lag <= lag_max; ++lag) {
         float ac = 0.0f;
         for (size_t i = 0; i + lag < env.size(); ++i) {
             ac += env[i] * env[i + lag];
         }
-        const float bpm = 60.0f * kEnvFps / static_cast<float>(lag);
-        const float octaves = std::log2(bpm / prior_bpm);
-        const float prior = std::exp(-(octaves * octaves)
-                                       / (2.0f * sigma_oct * sigma_oct));
+        const float bpm     = 60.0f * kEnvFps / static_cast<float>(lag);
+        const float octaves = std::log2(bpm / kTempoPriorBpm);
+        const float prior   = std::exp(-(octaves * octaves)
+                                          / (2.0f * kTempoPriorSig * kTempoPriorSig));
         const float score = ac * prior;
         if (score > best_score) {
             second_best = best_score;
@@ -118,61 +129,77 @@ void BeatStage::update_tempo(const config::BeatConfig& bc) {
 }
 
 void BeatStage::process(AnalysisFrame& frame, const config::Settings& cfg) {
-    const float flux = frame.flux_total.value_or(0.0f);
+    const float flux_low   = frame.flux_low.value_or(0.0f);
+    const float flux_mid   = frame.flux_mid.value_or(0.0f);
+    const float flux_high  = frame.flux_high.value_or(0.0f);
+    const float flux_total = frame.flux_total.value_or(0.0f);
 
-    // Append to envelope ring.
-    if (envelope_.size() < kEnvCapacity) envelope_.resize(kEnvCapacity, 0.0f);
-    envelope_[env_head_] = flux;
-    env_head_ = (env_head_ + 1) % kEnvCapacity;
-    env_size_ = std::min(env_size_ + 1, kEnvCapacity);
-
-    auto now = frame.captured_at;
-    float dt_sec = 1.0f / 100.0f;
+    // ----- dt ----------------------------------------------------------
+    const auto now = frame.captured_at;
+    float dt_sec = 1.0f / kEnvFps;
     if (last_t_.time_since_epoch().count() != 0) {
         dt_sec = std::chrono::duration<float>(now - last_t_).count();
+        // Guard against stalls / first frame anomalies.
+        dt_sec = std::clamp(dt_sec, 0.001f, 0.250f);
     }
     last_t_ = now;
 
-    // Detect onset with refractory.
-    const auto& bc = cfg.beat;
-    bool is_beat = detect_onset(flux, bc);
-    if (is_beat) {
-        const float since_last = std::chrono::duration<float>(now - last_onset_t_).count();
-        if (last_onset_t_.time_since_epoch().count() != 0
-            && since_last < bc.refractory_ms * 0.001f) {
-            is_beat = false;
-        }
-    }
+    // ----- Per-band baselines + variance (auto sensitivity source) -----
+    auto update_baseline = [](float& baseline, float& var, float flux) {
+        const float dev = flux - baseline;
+        baseline = kBaselineAlpha * baseline + (1.0f - kBaselineAlpha) * flux;
+        var      = kBaselineAlpha * var      + (1.0f - kBaselineAlpha) * dev * dev;
+    };
+    update_baseline(baseline_low_,  var_low_,  flux_low);
+    update_baseline(baseline_mid_,  var_mid_,  flux_mid);
+    update_baseline(baseline_high_, var_high_, flux_high);
 
-    // Beat envelope: spike to 1.0, decay.
-    if (is_beat) {
-        beat_value_ = 1.0f;
+    // ----- Onset detection ---------------------------------------------
+    const float strength = std::clamp(cfg.beat.pulse_strength, 0.05f, 3.0f);
+    const float n_sigma  = kSigmaBase / strength;
+
+    const float os_low  = onset_strength(flux_low,  baseline_low_,  var_low_,  n_sigma) * kWeightLow;
+    const float os_mid  = onset_strength(flux_mid,  baseline_mid_,  var_mid_,  n_sigma) * kWeightMid;
+    const float os_high = onset_strength(flux_high, baseline_high_, var_high_, n_sigma) * kWeightHigh;
+    const float onset   = std::max({os_low, os_mid, os_high});
+
+    // Refractory: don't allow rapid re-triggers.
+    const float since_last = (last_onset_t_.time_since_epoch().count() != 0)
+        ? std::chrono::duration<float>(now - last_onset_t_).count()
+        : 1e6f;
+    const bool in_refractory = since_last < kRefractorySec;
+
+    if (onset > 0.0f && !in_refractory) {
+        beat_value_   = std::max(beat_value_, onset);
         last_onset_t_ = now;
-    } else {
-        beat_value_ = std::max(0.0f, beat_value_ - bc.beat_decay_per_sec * dt_sec);
     }
-    frame.beat = beat_value_;
 
-    // Recompute tempo every ~250 ms (every ~25 frames at 100 Hz).
+    // Smooth exponential decay.
+    beat_value_ *= std::exp(-dt_sec / kDecayTauSec);
+    frame.beat   = std::clamp(beat_value_, 0.0f, 1.0f);
+
+    // ----- Tempo / phase (instrumentation) -----------------------------
+    if (envelope_.size() < kEnvCapacity) envelope_.resize(kEnvCapacity, 0.0f);
+    envelope_[env_head_] = flux_total;
+    env_head_ = (env_head_ + 1) % kEnvCapacity;
+    env_size_ = std::min(env_size_ + 1, kEnvCapacity);
+
     if (++frames_since_tempo_update_ >= 25) {
         frames_since_tempo_update_ = 0;
-        update_tempo(bc);
+        update_tempo();
     }
-    frame.tempo_bpm = tempo_bpm_;
+    frame.tempo_bpm        = tempo_bpm_;
     frame.tempo_confidence = tempo_confidence_;
-    frame.tempo_detected = tempo_detected_;
+    frame.tempo_detected   = tempo_detected_;
 
-    // PLL beat-phase tracker. Phase advances at the locked tempo; on a
-    // confident detected onset, soft-correct toward expected phase 0.
     if (tempo_detected_ && tempo_bpm_ > 0.0f) {
         beat_phase_ += dt_sec * tempo_bpm_ / 60.0f;
         beat_phase_ -= std::floor(beat_phase_);
-        if (is_beat && tempo_confidence_ > 0.3f) {
-            // Phase error: distance to nearest integer beat (mod 1).
+        if (onset > 0.0f && tempo_confidence_ > 0.3f) {
             const float wrapped = beat_phase_ - std::round(beat_phase_);
-            const float err = -wrapped;  // pull toward zero
-            beat_phase_ += bc.phase_kp * err;
-            tempo_bpm_  += bc.phase_ki * err * 60.0f;  // tiny BPM nudge
+            const float err = -wrapped;
+            beat_phase_ += kPhaseKp * err;
+            tempo_bpm_  += kPhaseKi * err * 60.0f;
             beat_phase_ -= std::floor(beat_phase_);
         }
     } else {

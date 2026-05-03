@@ -697,6 +697,11 @@ static void section_levels(const AudioSnapshot& snap, config::Settings& cfg, boo
 }
 
 // ---- Beat Detection -----------------------------------------------------
+//
+// One user-facing knob (Pulse Strength). The detector inside is fully
+// auto-tuned from per-band flux baselines; tempo and phase are best-effort
+// instrumentation with no UI knobs (shaders gate on tempo_confidence and
+// fall back to chronotensity when not locked).
 
 static void section_beat(const AudioSnapshot& snap, config::Settings& cfg, bool& dirty) {
     using namespace overlay_style;
@@ -713,51 +718,27 @@ static void section_beat(const AudioSnapshot& snap, config::Settings& cfg, bool&
 
     {
         TightRowSpacing tight;
-        meter_row("Beat",          std::clamp(snap.beat,       0.0f, 1.0f), fill);
-        meter_row("Beat position", std::clamp(snap.beat_phase, 0.0f, 1.0f), fill);
+        meter_row("Pulse", std::clamp(snap.beat, 0.0f, 1.0f), fill);
         if (snap.tempo_detected) {
             info_row("Tempo", "%.1f BPM (%.0f%% confidence)",
                      snap.tempo_bpm, snap.tempo_confidence * 100.0f);
         } else {
             label_left("Tempo");
-            ImGui::TextDisabled("searching... (%.1f BPM, %.0f%% confidence)",
-                                snap.tempo_bpm, snap.tempo_confidence * 100.0f);
+            ImGui::TextDisabled("searching... (%.0f%% confidence)",
+                                snap.tempo_confidence * 100.0f);
         }
     }
 
     if (show) {
         ImGui::Indent(kSubGroupIndent);
-        if (slider_row("Beat sensitivity", &cfg.beat.threshold_lambda, 0.0f, 1.0f, "%.3f"))
+        if (slider_row("Pulse Strength", &cfg.beat.pulse_strength, 0.0f, 3.0f, "%.2f"))
             dirty = true;
-        tip("Higher = pickier (only the loudest hits register). Lower = more sensitive to subtle rhythm. Default works for most music.\nTechnical: beat.threshold_lambda, [0, 1]");
-        if (slider_row("Beat decay", &cfg.beat.beat_decay_per_sec, 0.1f, 10.0f, "%.2f"))
-            dirty = true;
-        tip("How fast the listeningway_beat uniform fades after each onset. Higher = sharper flashes.\nTechnical: beat.beat_decay_per_sec, /sec");
-
-        subgroup_label("Advanced:");
-        ImGui::Indent(kSubGroupIndent);
-        if (slider_row("Threshold window (ms)", &cfg.beat.threshold_window_ms, 10.0f, 1000.0f, "%.0f"))
-            dirty = true;
-        tip("Sliding window for the adaptive threshold.\nTechnical: beat.threshold_window_ms");
-        if (slider_row("Refractory (ms)", &cfg.beat.refractory_ms, 5.0f, 500.0f, "%.0f"))
-            dirty = true;
-        tip("Minimum spacing between detected onsets. Suppresses double-fires.\nTechnical: beat.refractory_ms");
-        if (slider_row("PLL gain (P)", &cfg.beat.phase_kp, 0.0f, 1.0f, "%.3f"))
-            dirty = true;
-        tip("How hard the beat phase pulls toward each detected onset.\nTechnical: beat.phase_kp");
-        if (slider_row("PLL gain (I)", &cfg.beat.phase_ki, 0.0f, 0.5f, "%.4f"))
-            dirty = true;
-        tip("How fast tempo drift is corrected.\nTechnical: beat.phase_ki");
-        if (slider_row("Tempo prior (BPM)", &cfg.beat.tempo_prior_bpm, 60.0f, 200.0f, "%.0f"))
-            dirty = true;
-        tip("Center of the tempo prior. Mitigates octave errors (locking to half/double speed).\nTechnical: beat.tempo_prior_bpm");
-        if (slider_row("Tempo prior width (oct)", &cfg.beat.tempo_prior_sigma, 0.1f, 2.0f, "%.2f"))
-            dirty = true;
-        tip("Width of the tempo prior in octaves. Tighter = stronger pull toward the prior BPM.\nTechnical: beat.tempo_prior_sigma");
-        if (slider_row("Tempo window (s)", &cfg.beat.tempo_window_sec, 1.0f, 30.0f, "%.1f"))
-            dirty = true;
-        tip("Autocorrelation history length. Longer = more stable tempo, slower to adapt.\nTechnical: beat.tempo_window_sec");
-        ImGui::Unindent(kSubGroupIndent);
+        tip("How reactive the Pulse meter (and the listeningway_beat shader uniform) is.\n"
+            "  • 0.0 — off; no triggers\n"
+            "  • 1.0 — balanced default; works for most music\n"
+            "  • 2-3 — more reactive; useful for sparse / quiet content\n"
+            "Everything else (sensitivity threshold, refractory window, tempo prior, PLL gains, decay) is auto-tuned from the audio.\n"
+            "Technical: beat.pulse_strength, [0, 3]");
         ImGui::Unindent(kSubGroupIndent);
     }
 }

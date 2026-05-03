@@ -145,9 +145,7 @@ Trimmed `Listeningway.json` example:
     "equalizer_bands": [1.11, 1.29, 2.11, 1.80, 1.63]
   },
   "beat": {
-    "algorithm": 1,                   // 0 = simple-energy, 1 = autocorrelation + PLL
-    "profile": "general",
-    "tempo_prior_bpm": 120.0
+    "pulse_strength": 1.0              // single user-facing knob; 0..3
   },
   "agc":      { "window_seconds": 5.0, "clamp_max": 4.0 },
   "loudness": { "window_ms": 400.0 },

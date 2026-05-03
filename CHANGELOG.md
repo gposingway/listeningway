@@ -7,6 +7,38 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **Beat detection redesigned for satisfaction over technicality.** The
+  Beat Detection panel now exposes a single user-facing knob, **Pulse
+  Strength** (0..3, default 1.0). Everything previously exposed
+  (`threshold_lambda`, `threshold_window_ms`, `refractory_ms`,
+  `phase_kp`, `phase_ki`, `tempo_prior_bpm`, `tempo_prior_sigma`,
+  `tempo_window_sec`, `beat_decay_per_sec`, the `algorithm` switch, and
+  the `general / edm / acoustic / custom` profile selector) is removed
+  from `BeatConfig` and the overlay. The detector inside is auto-tuned
+  per-band from the running flux baselines and variance — no per-genre
+  presets needed.
+- **Multi-band onset aggregation.** The detector now reads `flux_low`,
+  `flux_mid`, and `flux_high` separately, maintains a per-band EMA
+  baseline + variance as the auto-sensitivity reference, and fires
+  when any band crosses `baseline + N · sigma` (N = 3 / pulse_strength).
+  Bass-weighted aggregation across the three bands. Mitigates the
+  classic "sustained loud passage saturates the threshold" failure that
+  bit single-band amplitude flux detectors.
+- **`listeningway_beat` is now a continuous pulse curve.** Same [0, 1]
+  range, same shader name, but each onset attacks instantly to a
+  strength graded by how loudly it stood out from its band's recent
+  baseline, and decays exponentially with a ~150 ms time constant
+  instead of the v1 spike-to-1-and-linear-decay. Smoother to read in
+  shaders; missed beats just go quiet rather than flicker wrong.
+- Tempo (`tempo_bpm`, `tempo_confidence`, `tempo_detected`) and beat
+  phase (`beat_phase`) stay published as instrumentation but no longer
+  have any UI knobs. Tempo search is restricted to a single octave
+  (60..180 BPM) internally to mitigate octave errors. Shaders gate on
+  `tempo_confidence > 0.4` and fall back to the chronotensity phases
+  when not locked, per the AudioLink design pattern.
+
 ### Fixed
 
 - **`Listeningway.fx` failed to compile under D3D11.** The
