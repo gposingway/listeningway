@@ -89,6 +89,10 @@ add_library(${PROJECT_NAME} SHARED
     src/audio/dsp/stages/directional_stage.h
     src/audio/dsp/stages/loudness_stage.h
 
+    # Beat-tracker submodules (clean-room, see docs/adr/research-notes-beat.md)
+    src/audio/dsp/beat/odf_csd.h
+    src/audio/dsp/beat/odf_csd.cpp
+
     # Snapshot publication
     src/audio/snapshot/audio_snapshot.h
     src/audio/snapshot/seqlock_snapshot.h
