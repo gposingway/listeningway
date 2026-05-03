@@ -52,6 +52,13 @@ public:
     bool wants_self_disarm() const override { return wants_disarm_.load(); }
     void disarm_in_settings(config::Settings& s) const override;
 
+    // Per-zone-type counts (only non-empty zones counted). Surfaced by
+    // the overlay UI so users can see "1 single, 1 linear, 1 matrix"
+    // alongside their pattern dropdowns.
+    int count_single() const noexcept { return count_single_.load(); }
+    int count_linear() const noexcept { return count_linear_.load(); }
+    int count_matrix() const noexcept { return count_matrix_.load(); }
+
 private:
     void worker_main();
 
@@ -65,13 +72,6 @@ private:
     // fails — i.e., when the worker is going to exit and the on/off
     // toggle in settings should follow.
     std::atomic<bool> wants_disarm_{false};
-
-    // Per-zone-type counts (only non-empty zones counted). Surfaced by
-    // the overlay UI so users can see "1 single, 1 linear, 1 matrix"
-    // alongside their pattern dropdowns.
-    int count_single() const noexcept { return count_single_.load(); }
-    int count_linear() const noexcept { return count_linear_.load(); }
-    int count_matrix() const noexcept { return count_matrix_.load(); }
 
     // Status — read from any thread.
     mutable std::mutex    status_mutex_;

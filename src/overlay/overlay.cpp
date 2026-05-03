@@ -34,6 +34,7 @@
 #include "../config/store.h"
 #include "../output/consumer_registry.h"
 #include "../output/i_output_consumer.h"
+#include "../output/openrgb_consumer.h"
 
 namespace lw {
 
@@ -1260,8 +1261,17 @@ void section_integrations(config::Settings& cfg, bool& dirty,
 
     // ---- OpenRGB --------------------------------------------------------
     {
+        // Pull live counts from the consumer (cast through IOutputConsumer*
+        // is safe — we put it in the registry ourselves with this concrete
+        // type). Counts are 0 until the worker connects and enumerates;
+        // null when the consumer isn't registered yet.
+        auto* orgb = static_cast<output::OpenRgbConsumer*>(registry.find_by_id("openrgb"));
+        const int n_single = orgb ? orgb->count_single() : 0;
+        const int n_linear = orgb ? orgb->count_linear() : 0;
+        const int n_matrix = orgb ? orgb->count_matrix() : 0;
+
         std::string status;
-        if (auto* c = registry.find_by_id("openrgb")) status = c->status_line();
+        if (orgb) status = orgb->status_line();
 
         if (integration_row("OpenRGB", cfg.network.openrgb.enabled, dirty,
                              status, "openrgb")) {
@@ -1274,6 +1284,96 @@ void section_integrations(config::Settings& cfg, bool& dirty,
             if (host_port_rows("openrgb", cfg.network.openrgb.host,
                                 cfg.network.openrgb.port, 1, 65535))
                 dirty = true;
+
+            // ---- Pattern dropdowns (per zone type) -----------------------
+            // Each row: "Single (N)" left-aligned, dropdown filling the
+            // rest. Dropdown disabled when N == 0. Pattern names listed
+            // active → soothing, matching the enum order.
+            using SingleP = config::OpenRgbConfig::SinglePattern;
+            using LinearP = config::OpenRgbConfig::LinearPattern;
+            using MatrixP = config::OpenRgbConfig::MatrixPattern;
+
+            static const char* const kSingleNames[] = {
+                "Beat Flash", "Volume Pulse", "Spectral Hue",
+                "Chronotensity Cycle", "Static", "Off",
+            };
+            static const char* const kLinearNames[] = {
+                "Spectrum Bar", "VU Meter", "Chase / Orbit",
+                "Pulse from Center", "Stereo Split", "Color Wash",
+                "Static", "Off",
+            };
+            static const char* const kMatrixNames[] = {
+                "Spatial Map", "Equalizer Columns", "Per-Region",
+                "Spectrogram Waterfall", "Beat Flash", "Color Wash",
+                "Static", "Off",
+            };
+
+            auto pattern_dropdown_row = [&](const char* type_name, int count,
+                                              const char* const* names, int n_names,
+                                              int* selected) -> bool {
+                char label[40];
+                std::snprintf(label, sizeof(label), "%s (%d)", type_name, count);
+                label_left(label);
+                char id[40];
+                std::snprintf(id, sizeof(id), "##patdd_%s", type_name);
+                ImGui::PushItemWidth(-1);
+                bool changed = false;
+                if (count == 0) {
+                    ImGui::BeginDisabled();
+                    ImGui::Combo(id, selected, names, n_names);
+                    ImGui::EndDisabled();
+                } else {
+                    if (ImGui::Combo(id, selected, names, n_names)) changed = true;
+                }
+                ImGui::PopItemWidth();
+                return changed;
+            };
+
+            int s = static_cast<int>(cfg.network.openrgb.pattern_single);
+            if (pattern_dropdown_row("Single", n_single, kSingleNames,
+                                       static_cast<int>(std::size(kSingleNames)), &s)) {
+                cfg.network.openrgb.pattern_single = static_cast<SingleP>(s);
+                dirty = true;
+            }
+            tip("Pattern for 1-LED zones (GPU accents, AIO pumps).\n"
+                "Ordered active → soothing.\n"
+                "  • Beat Flash — pulses on each beat\n"
+                "  • Volume Pulse — brightness rises and falls\n"
+                "  • Spectral Hue — hue from spectral centroid (default)\n"
+                "  • Chronotensity Cycle — hue rotates always\n"
+                "  • Static / Off");
+
+            int l = static_cast<int>(cfg.network.openrgb.pattern_linear);
+            if (pattern_dropdown_row("Linear", n_linear, kLinearNames,
+                                       static_cast<int>(std::size(kLinearNames)), &l)) {
+                cfg.network.openrgb.pattern_linear = static_cast<LinearP>(l);
+                dirty = true;
+            }
+            tip("Pattern for 1D-strip zones (RAM, case strips, fan rings, motherboard accents).\n"
+                "Ordered active → soothing.\n"
+                "  • Spectrum Bar — freq across length (default)\n"
+                "  • VU Meter — fills with volume, peak-hold dot\n"
+                "  • Chase / Orbit — chronotensity-driven comet\n"
+                "  • Pulse from Center — bass + beat ripples outward\n"
+                "  • Stereo Split — left half / right half by L/R volume\n"
+                "  • Color Wash / Static / Off");
+
+            int m = static_cast<int>(cfg.network.openrgb.pattern_matrix);
+            if (pattern_dropdown_row("Matrix", n_matrix, kMatrixNames,
+                                       static_cast<int>(std::size(kMatrixNames)), &m)) {
+                cfg.network.openrgb.pattern_matrix = static_cast<MatrixP>(m);
+                dirty = true;
+            }
+            tip("Pattern for 2D-grid zones (keyboards, mouse pads).\n"
+                "Ordered active → soothing.\n"
+                "  • Spatial Map — direction8 → keyboard XY\n"
+                "  • Equalizer Columns — N freq bands as vertical bars\n"
+                "  • Per-Region — bass at bottom, treble at top, beat at spacebar (default)\n"
+                "  • Spectrogram Waterfall — time scrolls down rows\n"
+                "  • Beat Flash / Color Wash / Static / Off");
+
+            ImGui::Spacing();
+
             if (slider_int_row("Update rate (Hz)", &cfg.network.openrgb.rate_hz, 5, 60)) {
                 cfg.network.openrgb.rate_hz = std::clamp(cfg.network.openrgb.rate_hz, 5, 60);
                 dirty = true;
@@ -1284,7 +1384,7 @@ void section_integrations(config::Settings& cfg, bool& dirty,
             tip("Global multiplier on output color intensity (0..1).\nTechnical: network.openrgb.brightness");
             label_left("Test");
             if (ImGui::Button("Flash all LEDs##openrgb", ImVec2(-1, 0))) {
-                if (auto* c = registry.find_by_id("openrgb")) c->send_test_packet();
+                if (orgb) orgb->send_test_packet();
             }
             tip("Connects briefly and flashes every LED to white for one frame. Verifies the server is reachable and devices respond.");
             ImGui::Unindent(kSubGroupIndent * 2.0f);
