@@ -38,6 +38,7 @@
 #include "output/osc_consumer.h"
 #include "output/uniform_publisher_consumer.h"
 #include "overlay/overlay_consumer.h"
+#include "util/log.h"
 
 namespace lw {
 
@@ -69,7 +70,12 @@ void compose_pipeline(dsp::Pipeline& p) {
 
 }  // namespace
 
-App::App(HMODULE addon_module) : module_(addon_module) {}
+App::App(HMODULE addon_module) : module_(addon_module) {
+    // Resolve the log file path (next-to-DLL) so error() lines work even
+    // before the user's debug_logging preference loads. set_enabled() runs
+    // later in tick_running() once we've read the settings.
+    log::init(addon_module);
+}
 
 App::~App() {
     stop();
@@ -82,6 +88,9 @@ boot::StepResult App::tick_boot() {
         case Phase::LoadSettings: {
             store_ = std::make_unique<config::Store>(settings_path_next_to_dll(module_));
             store_->load();   // missing file → defaults are kept
+            log::set_enabled(store_->snapshot().debug.debug_logging);
+            log::info("listeningway: settings loaded; debug_logging=%d",
+                      static_cast<int>(log::is_enabled()));
             phase_ = Phase::BuildAudioSystem;
             return StepResult::Continue;
         }
@@ -149,6 +158,8 @@ boot::StepResult App::tick_boot() {
 void App::tick_running() {
     if (phase_ != Phase::Running) return;
     if (!consumers_ || !system_ || !store_) return;
+    // Cheap atomic store; no need to compare-and-set.
+    log::set_enabled(store_->snapshot().debug.debug_logging);
     consumers_->poll_self_disarm(*system_, module_, *store_);
 }
 

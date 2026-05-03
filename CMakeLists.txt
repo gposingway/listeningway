@@ -140,6 +140,10 @@ add_library(${PROJECT_NAME} SHARED
 
     # Resource file (version info)
     assets/listeningway.rc
+
+    # Utilities
+    src/util/log.h
+    src/util/log.cpp
 )
 
 target_include_directories(${PROJECT_NAME} PRIVATE
