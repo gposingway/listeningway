@@ -35,6 +35,7 @@ ADRs follow [MADR](https://adr.github.io/madr/) structure:
 | [0011](0011-osc-output.md) | OSC output consumer: tinyosc embed + address schema | Accepted |
 | [0012](0012-openrgb-output.md) | OpenRGB output consumer: cppSDK embed + opinionated mapping | Accepted |
 | [0013](0013-beat-tracker-rewrite.md) | Beat tracker: clean-room Davies / Plumbley / Stark implementation | Accepted |
+| [0014](0014-openrgb-pattern-matrix.md) | OpenRGB visualisation patterns: per-zone-type matrix (Single / Linear / Matrix) | Accepted |
 
 ## Reading order for new contributors
 
