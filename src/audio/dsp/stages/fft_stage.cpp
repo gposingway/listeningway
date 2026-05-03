@@ -20,6 +20,7 @@ FftStage::~FftStage() {
 
 void FftStage::reset() {
     std::fill(magnitudes_.begin(), magnitudes_.end(), 0.0f);
+    std::fill(phases_.begin(), phases_.end(), 0.0f);
 }
 
 void FftStage::configure(int fft_size) {
@@ -42,6 +43,7 @@ void FftStage::configure(int fft_size) {
     }
 
     magnitudes_.assign(fft_size_ / 2, 0.0f);
+    phases_.assign(fft_size_ / 2, 0.0f);
 }
 
 void FftStage::process(AnalysisFrame& frame, const config::Settings& cfg) {
@@ -75,9 +77,11 @@ void FftStage::process(AnalysisFrame& frame, const config::Settings& cfg) {
         const float r = out_[k].r;
         const float im = out_[k].i;
         magnitudes_[k] = std::sqrt(r * r + im * im);
+        phases_[k]     = std::atan2(im, r);
     }
 
     frame.magnitudes = std::span<const float>(magnitudes_.data(), magnitudes_.size());
+    frame.phases     = std::span<const float>(phases_.data(),     phases_.size());
 }
 
 }  // namespace lw::dsp

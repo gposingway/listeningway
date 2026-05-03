@@ -1,10 +1,11 @@
-// FftStage — Hann-windowed FFT, magnitudes only.
+// FftStage — Hann-windowed FFT producing per-bin magnitude AND phase.
 // Reads:  Samples, Format
-// Writes: Magnitudes
+// Writes: Magnitudes, Phases
 //
 // Wraps kissfft with cached config + buffers (one allocation at start, none
-// per frame). Output is half-spectrum magnitudes in `magnitudes_buf_`,
-// exposed via std::span on the AnalysisFrame.
+// per frame). Output is half-spectrum magnitudes plus half-spectrum phase
+// (atan2 of the complex bin, radians). Phase is consumed by the
+// complex-spectral-difference onset function in BeatStage.
 #pragma once
 
 #include <kiss_fft.h>
@@ -27,7 +28,7 @@ public:
         return r;
     }
     std::span<const FieldId> writes() const override {
-        static constexpr FieldId w[] = {FieldId::Magnitudes};
+        static constexpr FieldId w[] = {FieldId::Magnitudes, FieldId::Phases};
         return w;
     }
     void reset() override;
@@ -42,6 +43,7 @@ private:
     std::vector<kiss_fft_cpx> out_;
     std::vector<float>      hann_;
     std::vector<float>      magnitudes_;
+    std::vector<float>      phases_;
 };
 
 }  // namespace lw::dsp

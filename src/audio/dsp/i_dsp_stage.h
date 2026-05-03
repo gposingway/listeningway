@@ -24,7 +24,7 @@ enum class FieldId {
     Samples,        // input from capture (always present)
     Format,
     Volume, VolumeLeft, VolumeRight, VolumeNorm, VolumeAtt,
-    Magnitudes,
+    Magnitudes, Phases,
     RawBands, Bands, Bands16, Bands32,
     BassNorm, MidNorm, TrebNorm,
     BassAtt,  MidAtt,  TrebAtt,

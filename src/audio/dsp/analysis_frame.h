@@ -36,6 +36,7 @@ struct AnalysisFrame {
 
     // --- Frequency-domain features ---
     std::optional<std::span<const float>> magnitudes;  ///< FFT mag bins, half-spectrum
+    std::optional<std::span<const float>> phases;      ///< FFT phase (atan2 of complex), half-spectrum, in radians (-π, π]
 
     // Heap-backed working buffers that stages can write into; we use vectors
     // here (not arrays) because band counts are configurable. Stages write
