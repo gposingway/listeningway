@@ -67,8 +67,40 @@ NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE_WITH_DEFAULT(UiConfig,
 NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE_WITH_DEFAULT(OscConfig,
     enabled, host, port, rate_hz)
 
+NLOHMANN_JSON_SERIALIZE_ENUM(OpenRgbConfig::SinglePattern, {
+    {OpenRgbConfig::SinglePattern::BeatFlash,          "beat_flash"},
+    {OpenRgbConfig::SinglePattern::VolumePulse,        "volume_pulse"},
+    {OpenRgbConfig::SinglePattern::SpectralHue,        "spectral_hue"},
+    {OpenRgbConfig::SinglePattern::ChronotensityCycle, "chronotensity_cycle"},
+    {OpenRgbConfig::SinglePattern::Static,             "static"},
+    {OpenRgbConfig::SinglePattern::Off,                "off"},
+})
+
+NLOHMANN_JSON_SERIALIZE_ENUM(OpenRgbConfig::LinearPattern, {
+    {OpenRgbConfig::LinearPattern::SpectrumBar,     "spectrum_bar"},
+    {OpenRgbConfig::LinearPattern::VuMeter,         "vu_meter"},
+    {OpenRgbConfig::LinearPattern::ChaseOrbit,      "chase_orbit"},
+    {OpenRgbConfig::LinearPattern::PulseFromCenter, "pulse_from_center"},
+    {OpenRgbConfig::LinearPattern::StereoSplit,     "stereo_split"},
+    {OpenRgbConfig::LinearPattern::ColorWash,       "color_wash"},
+    {OpenRgbConfig::LinearPattern::Static,          "static"},
+    {OpenRgbConfig::LinearPattern::Off,             "off"},
+})
+
+NLOHMANN_JSON_SERIALIZE_ENUM(OpenRgbConfig::MatrixPattern, {
+    {OpenRgbConfig::MatrixPattern::SpatialMap,           "spatial_map"},
+    {OpenRgbConfig::MatrixPattern::EqualizerColumns,     "equalizer_columns"},
+    {OpenRgbConfig::MatrixPattern::PerRegion,            "per_region"},
+    {OpenRgbConfig::MatrixPattern::SpectrogramWaterfall, "spectrogram_waterfall"},
+    {OpenRgbConfig::MatrixPattern::BeatFlash,            "beat_flash"},
+    {OpenRgbConfig::MatrixPattern::ColorWash,            "color_wash"},
+    {OpenRgbConfig::MatrixPattern::Static,               "static"},
+    {OpenRgbConfig::MatrixPattern::Off,                  "off"},
+})
+
 NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE_WITH_DEFAULT(OpenRgbConfig,
-    enabled, host, port, rate_hz, brightness)
+    enabled, host, port, rate_hz, brightness,
+    pattern_single, pattern_linear, pattern_matrix)
 
 NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE_WITH_DEFAULT(NetworkConfig, osc, openrgb)
 

@@ -139,12 +139,58 @@ struct OscConfig {
 /// an OpenRGB server (typically running on the local machine), enumerates
 /// controllers, and pushes per-LED frames at rate_hz. Listening port is
 /// NOT opened on this machine — we are the client.
+///
+/// Pattern dispatch is per zone-type (Single / Linear / Matrix) — see
+/// ADR-0014 for the catalogue, defaults, and rationale. Each connected
+/// zone's LEDs render under the pattern picked for its zone type; one
+/// dropdown per type covers any number of devices.
 struct OpenRgbConfig {
+    /// Patterns for single-LED zones (GPU accents, AIO pumps, single-LED
+    /// mice). Ordered active → soothing.
+    enum class SinglePattern {
+        BeatFlash,           ///< fixed colour, brightness pulses on each beat
+        VolumePulse,         ///< fixed colour, brightness rises/falls with volume_att
+        SpectralHue,         ///< hue from spectral_centroid, brightness from volume_att
+        ChronotensityCycle,  ///< hue rotates at phase_volume rate
+        Static,              ///< fixed colour, no reaction
+        Off,                 ///< black
+    };
+
+    /// Patterns for 1D-strip zones (RAM, case strips, fan rings, motherboard
+    /// accents, ARGB headers). Ordered active → soothing.
+    enum class LinearPattern {
+        SpectrumBar,      ///< freq across length, amplitude → brightness
+        VuMeter,          ///< volume_norm fills from one end, peak-hold dot
+        ChaseOrbit,       ///< phase_volume drives a moving "comet"
+        PulseFromCenter,  ///< bass + beat ripple outward symmetrically
+        StereoSplit,      ///< L half = volume_left, R half = volume_right
+        ColorWash,        ///< solid; hue from centroid, brightness from volume_att
+        Static,
+        Off,
+    };
+
+    /// Patterns for 2D-grid zones (keyboards, mouse pads). Ordered active
+    /// → soothing.
+    enum class MatrixPattern {
+        SpatialMap,            ///< direction8 projected onto matrix XY
+        EqualizerColumns,      ///< N freq bands as vertical bars across columns
+        PerRegion,             ///< bass→alphas, mid→numrow, treb→F-row, beat→spacebar
+        SpectrogramWaterfall,  ///< time scrolls down rows, freq across columns
+        BeatFlash,             ///< entire matrix pulses on a base colour
+        ColorWash,             ///< solid; hue from centroid
+        Static,
+        Off,
+    };
+
     bool        enabled    = false;
     std::string host       = "127.0.0.1";
     int         port       = 6742;     ///< OpenRGB server default
     int         rate_hz    = 30;       ///< clamp 5..60 (server has wake-up issues above 60)
     float       brightness = 1.0f;     ///< 0..1 global multiplier
+
+    SinglePattern pattern_single = SinglePattern::SpectralHue;
+    LinearPattern pattern_linear = LinearPattern::SpectrumBar;
+    MatrixPattern pattern_matrix = MatrixPattern::PerRegion;
 };
 
 /// Network outputs umbrella.
