@@ -230,13 +230,61 @@ void OpenRgbConsumer::worker_main() {
     orgb::DeviceListResult devices_result;
 
     auto refresh_devices = [&]() -> bool {
-        devices_result = client.requestDeviceList();
-        if (devices_result.status != orgb::RequestStatus::Success) {
-            record_error(std::string("device list: ")
-                          + orgb::enumString(devices_result.status));
-            device_count_.store(0);
+        // Diagnostic: ask for the count separately first so we can tell
+        // (a) whether the cppSDK's request/reply round-trip works at all,
+        // and (b) whether the count we get matches the devices we get
+        // back. If they disagree we'll surface that in the status line —
+        // it points at a deserialisation drift between cppSDK protocol
+        // v3 and whatever the OpenRGB server is actually speaking.
+        const auto count_result = client.requestDeviceCount();
+        const std::string count_status_str = orgb::enumString(count_result.status);
+        const uint32_t reported_count =
+            (count_result.status == orgb::RequestStatus::Success)
+                ? count_result.count : 0u;
+
+        // Retry on Success-but-empty: OpenRGB sometimes needs a beat
+        // after SetClientName before the device-list query returns the
+        // populated list. Three attempts × 250 ms covers any plausible
+        // server-side debounce; if it's still empty after that it's a
+        // real problem, not timing.
+        constexpr int kRetries = 3;
+        for (int attempt = 0; attempt < kRetries; ++attempt) {
+            devices_result = client.requestDeviceList();
+            if (devices_result.status != orgb::RequestStatus::Success) {
+                record_error(std::string("device list (attempt ")
+                              + std::to_string(attempt + 1) + "): "
+                              + orgb::enumString(devices_result.status)
+                              + " [count was " + std::to_string(reported_count)
+                              + " / " + count_status_str + "]");
+                device_count_.store(0);
+                return false;
+            }
+            if (devices_result.devices.size() > 0) break;
+            if (attempt + 1 < kRetries) {
+                std::this_thread::sleep_for(std::chrono::milliseconds(250));
+            }
+        }
+
+        const size_t got = devices_result.devices.size();
+        device_count_.store(static_cast<int>(got));
+
+        // If we got nothing or got fewer than the count claims, surface
+        // the discrepancy so we can see it in the overlay's status line.
+        if (got == 0) {
+            std::lock_guard<std::mutex> g(status_mutex_);
+            last_error_ = std::string("device list empty after ")
+                          + std::to_string(kRetries) + " attempts (count: "
+                          + std::to_string(reported_count) + " / "
+                          + count_status_str + ")";
             return false;
         }
+        if (static_cast<uint32_t>(got) != reported_count) {
+            std::lock_guard<std::mutex> g(status_mutex_);
+            last_error_ = std::string("device count mismatch: list returned ")
+                          + std::to_string(got) + " but count says "
+                          + std::to_string(reported_count);
+        }
+
         // Switch each device to custom mode so direct LED writes take effect.
         for (const auto& dev : devices_result.devices) {
             const auto rs = client.switchToCustomMode(dev);
@@ -248,7 +296,6 @@ void OpenRgbConsumer::worker_main() {
                               + dev.name + ": " + orgb::enumString(rs);
             }
         }
-        device_count_.store(static_cast<int>(devices_result.devices.size()));
         return true;
     };
 
