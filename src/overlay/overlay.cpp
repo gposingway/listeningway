@@ -306,6 +306,30 @@ void section_header_only(const char* title, const char* hint) {
     ImGui::Separator();
 }
 
+// Three-way segmented selector. Renders count buttons in a row at the
+// current cursor; the active one is highlighted in the integration-on
+// green so the picked option reads at a glance. Returns the new index
+// (== current if nothing was clicked this frame).
+int segmented_row(const char* label, const char* const* options, int count, int current) {
+    using namespace overlay_style;
+    label_left(label);
+    int new_value = current;
+    ImGui::PushID(label);
+    for (int i = 0; i < count; ++i) {
+        if (i > 0) ImGui::SameLine(0.0f, 1.0f);
+        const bool active = (i == current);
+        if (active) {
+            ImGui::PushStyleColor(ImGuiCol_Button,        kColorIntegrationOn);
+            ImGui::PushStyleColor(ImGuiCol_ButtonHovered, kColorIntegrationOnHover);
+            ImGui::PushStyleColor(ImGuiCol_ButtonActive,  kColorIntegrationOnActive);
+        }
+        if (ImGui::Button(options[i])) new_value = i;
+        if (active) ImGui::PopStyleColor(3);
+    }
+    ImGui::PopID();
+    return new_value;
+}
+
 // Sub-group label inside a section.
 void subgroup_label(const char* label) {
     ImGui::Spacing();
@@ -698,13 +722,17 @@ static void section_levels(const AudioSnapshot& snap, config::Settings& cfg, boo
 
 // ---- Beat Detection -----------------------------------------------------
 //
-// One user-facing knob (Pulse Strength). The detector inside is fully
-// auto-tuned from per-band flux baselines; tempo and phase are best-effort
-// instrumentation with no UI knobs (shaders gate on tempo_confidence and
-// fall back to chronotensity when not locked).
+// Three-mode UX following the convergent pattern of pro audio tools (Logic
+// Smart Tempo, iZotope Master Assistant, LANDR, Ableton Warp): Auto adapts
+// itself, Profile picks a named signal-character preset, Custom exposes
+// the slider. Live Pulse meter and Tempo readout sit at the top in all
+// modes so the user can see the system reacting; status badge below the
+// Mode selector tells them whether Auto is still adapting or has locked.
 
 static void section_beat(const AudioSnapshot& snap, config::Settings& cfg, bool& dirty) {
     using namespace overlay_style;
+    using BMode = config::BeatConfig::Mode;
+    using BProf = config::BeatConfig::Profile;
 
     char hint[32];
     if (snap.tempo_detected) {
@@ -731,14 +759,59 @@ static void section_beat(const AudioSnapshot& snap, config::Settings& cfg, bool&
 
     if (show) {
         ImGui::Indent(kSubGroupIndent);
-        if (slider_row("Pulse Strength", &cfg.beat.pulse_strength, 0.0f, 3.0f, "%.2f"))
+
+        static const char* const kModeOptions[]    = { "Auto", "Profile", "Custom" };
+        static const char* const kProfileOptions[] = { "Percussive", "Melodic", "Sustained" };
+
+        const int prev_mode_idx = static_cast<int>(cfg.beat.mode);
+        const int new_mode_idx = segmented_row("Mode", kModeOptions, 3, prev_mode_idx);
+        if (new_mode_idx != prev_mode_idx) {
+            // Mode transition. If the user is heading into Custom, seed the
+            // slider from whatever the system was using a moment ago — Auto's
+            // converged value, or the profile's preset — so the slider lands
+            // where the audio is, not at the default.
+            if (static_cast<BMode>(new_mode_idx) == BMode::Custom) {
+                cfg.beat.pulse_strength =
+                    std::clamp(snap.beat_pulse_strength, 0.0f, 3.0f);
+            }
+            cfg.beat.mode = static_cast<BMode>(new_mode_idx);
             dirty = true;
-        tip("How reactive the Pulse meter (and the listeningway_beat shader uniform) is.\n"
-            "  • 0.0 — off; no triggers\n"
-            "  • 1.0 — balanced default; works for most music\n"
-            "  • 2-3 — more reactive; useful for sparse / quiet content\n"
-            "Everything else (sensitivity threshold, refractory window, tempo prior, PLL gains, decay) is auto-tuned from the audio.\n"
-            "Technical: beat.pulse_strength, [0, 3]");
+        }
+        tip("How beat detection picks its sensitivity:\n"
+            "  • Auto — observes the audio and tunes itself (takes a few seconds)\n"
+            "  • Profile — pick a preset by signal character\n"
+            "  • Custom — drive the Pulse Strength slider yourself");
+
+        if (cfg.beat.mode == BMode::Auto) {
+            label_left("Status");
+            if (snap.beat_auto_locked) {
+                ImGui::TextDisabled("Locked (strength %.2f)", snap.beat_pulse_strength);
+            } else {
+                ImGui::TextDisabled("Adapting... (strength %.2f)",
+                                    snap.beat_pulse_strength);
+            }
+        } else if (cfg.beat.mode == BMode::Profile) {
+            const int prev_prof_idx = static_cast<int>(cfg.beat.profile);
+            const int new_prof_idx = segmented_row("Character", kProfileOptions, 3,
+                                                   prev_prof_idx);
+            if (new_prof_idx != prev_prof_idx) {
+                cfg.beat.profile = static_cast<BProf>(new_prof_idx);
+                dirty = true;
+            }
+            tip("Pre-cooked sensitivity, per-band weighting, and decay time tuned for one signal character.\n"
+                "  • Percussive — drums, EDM, hip-hop. Bass-driven, tight pulse.\n"
+                "  • Melodic — vocal, rock, jazz, classical. Balanced bands.\n"
+                "  • Sustained — ambient, cinematic, sparse. Sensitive across bands, longer decay.\n"
+                "Names describe the signal, not the genre.");
+        } else {  // Custom
+            if (slider_row("Pulse Strength", &cfg.beat.pulse_strength, 0.0f, 3.0f, "%.2f"))
+                dirty = true;
+            tip("How reactive the Pulse meter (and the listeningway_beat shader uniform) is.\n"
+                "  • 0.0 — off; no triggers\n"
+                "  • 1.0 — balanced default\n"
+                "  • 2-3 — more reactive; useful for sparse / quiet content");
+        }
+
         ImGui::Unindent(kSubGroupIndent);
     }
 }

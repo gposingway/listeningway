@@ -31,6 +31,7 @@ enum class FieldId {
     SpectralCentroid, Loudness,
     FluxTotal, FluxLow, FluxMid, FluxHigh,
     Beat, BeatPhase, TempoBpm, TempoConfidence, TempoDetected,
+    BeatPulseStrength, BeatAutoLocked,
     PhaseVolume, PhaseBass, PhaseTreble,
     AudioPan, Direction8,
 };

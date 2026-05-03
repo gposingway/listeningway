@@ -63,6 +63,14 @@ struct AudioSnapshot {
     float tempo_confidence  = 0.0f;
     bool  tempo_detected    = false;
 
+    // BeatStage's working pulse strength (whatever Auto / Profile / Custom
+    // is currently using). Surfaced so the UI can seed the Custom slider
+    // from Auto's converged value when the user switches modes.
+    float beat_pulse_strength = 1.0f;
+    // True when the Auto adapter has been stable for ~3 s. Drives the
+    // "Adapting…" / "Locked" status badge in the overlay.
+    bool  beat_auto_locked    = false;
+
     // --- Chronotensity (energy-accumulated phases, robust where BPM is not) ---
     float phase_volume  = 0.0f;
     float phase_bass    = 0.0f;

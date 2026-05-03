@@ -9,29 +9,46 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
-- **Beat detection redesigned for satisfaction over technicality.** The
-  Beat Detection panel now exposes a single user-facing knob, **Pulse
-  Strength** (0..3, default 1.0). Everything previously exposed
-  (`threshold_lambda`, `threshold_window_ms`, `refractory_ms`,
-  `phase_kp`, `phase_ki`, `tempo_prior_bpm`, `tempo_prior_sigma`,
-  `tempo_window_sec`, `beat_decay_per_sec`, the `algorithm` switch, and
-  the `general / edm / acoustic / custom` profile selector) is removed
-  from `BeatConfig` and the overlay. The detector inside is auto-tuned
-  per-band from the running flux baselines and variance — no per-genre
-  presets needed.
-- **Multi-band onset aggregation.** The detector now reads `flux_low`,
+- **Beat Detection panel redesigned around Auto / Profile / Custom**,
+  following the convergent UX of pro audio tools (Logic Smart Tempo,
+  iZotope Master Assistant, LANDR mastering, Ableton Warp). The panel
+  now leads with a Mode segmented control:
+  - **Auto** (default). The system observes the recent onset rate and
+    adapts an internal pulse-strength multiplier to hit a target rate
+    (~2 onsets/sec) over a few seconds. Falls back to neutral during
+    silence. A subtle status badge shows "Adapting…" while converging
+    and "Locked" once stable for ~3 s. No knob.
+  - **Profile**. A second segmented control picks one of three named
+    signal-character presets — **Percussive** (drums / EDM / hip-hop:
+    bass-driven, tight pulse), **Melodic** (vocal / rock / jazz /
+    classical: balanced bands), **Sustained** (ambient / cinematic /
+    sparse: sensitive across bands, longer decay). Names follow
+    Ableton's "describe the signal, not the genre" convention so they
+    don't age badly. Each profile sets pulse strength, per-band
+    weights, and decay tau in one go.
+  - **Custom**. The Pulse Strength slider (0..3) is exposed for users
+    who want direct control. Switching from Auto or Profile into
+    Custom seeds the slider with whatever the system was using a
+    moment ago — no jarring reset.
+  All ten v1 knobs (`threshold_lambda`, `threshold_window_ms`,
+  `refractory_ms`, `phase_kp`, `phase_ki`, `tempo_prior_bpm`,
+  `tempo_prior_sigma`, `tempo_window_sec`, `beat_decay_per_sec`, the
+  `algorithm` switch) are gone from the UI and from `BeatConfig`.
+- **Multi-band onset aggregation.** The detector reads `flux_low`,
   `flux_mid`, and `flux_high` separately, maintains a per-band EMA
   baseline + variance as the auto-sensitivity reference, and fires
-  when any band crosses `baseline + N · sigma` (N = 3 / pulse_strength).
-  Bass-weighted aggregation across the three bands. Mitigates the
-  classic "sustained loud passage saturates the threshold" failure that
-  bit single-band amplitude flux detectors.
+  when any band crosses `baseline + N · sigma`. Per-band weights are
+  set by the active mode (Auto / Profile-default uses bass-weighted
+  1.0 / 0.7 / 0.5; Profile selectively rebalances). Mitigates the
+  "sustained loud passage saturates the threshold" failure that bit
+  the previous single-band amplitude-flux detector.
 - **`listeningway_beat` is now a continuous pulse curve.** Same [0, 1]
   range, same shader name, but each onset attacks instantly to a
   strength graded by how loudly it stood out from its band's recent
-  baseline, and decays exponentially with a ~150 ms time constant
-  instead of the v1 spike-to-1-and-linear-decay. Smoother to read in
-  shaders; missed beats just go quiet rather than flicker wrong.
+  baseline, and decays exponentially with a mode-dependent time
+  constant (120 ms in Percussive, 230 ms in Sustained) instead of the
+  v1 spike-to-1-and-linear-decay. Smoother to read in shaders; missed
+  beats just go quiet rather than flicker wrong.
 - Tempo (`tempo_bpm`, `tempo_confidence`, `tempo_detected`) and beat
   phase (`beat_phase`) stay published as instrumentation but no longer
   have any UI knobs. Tempo search is restricted to a single octave

@@ -62,6 +62,8 @@ struct AnalysisFrame {
     std::optional<float> tempo_bpm;
     std::optional<float> tempo_confidence;
     std::optional<bool>  tempo_detected;
+    std::optional<float> beat_pulse_strength;  ///< Auto/Profile/Custom working value
+    std::optional<bool>  beat_auto_locked;     ///< Auto-mode stable indicator
 
     // --- Chronotensity phases ---
     std::optional<float> phase_volume;

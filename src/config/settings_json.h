@@ -17,8 +17,20 @@ NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE_WITH_DEFAULT(AudioConfig,
     analysis_enabled, capture_source_code, simd_enabled,
     pan_smoothing, pan_offset)
 
+NLOHMANN_JSON_SERIALIZE_ENUM(BeatConfig::Mode, {
+    {BeatConfig::Mode::Auto,    "auto"},
+    {BeatConfig::Mode::Profile, "profile"},
+    {BeatConfig::Mode::Custom,  "custom"},
+})
+
+NLOHMANN_JSON_SERIALIZE_ENUM(BeatConfig::Profile, {
+    {BeatConfig::Profile::Percussive, "percussive"},
+    {BeatConfig::Profile::Melodic,    "melodic"},
+    {BeatConfig::Profile::Sustained,  "sustained"},
+})
+
 NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE_WITH_DEFAULT(BeatConfig,
-    pulse_strength)
+    mode, profile, pulse_strength)
 
 NLOHMANN_JSON_SERIALIZE_ENUM(FrequencyConfig::BandScale, {
     {FrequencyConfig::BandScale::Linear, "linear"},

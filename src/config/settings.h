@@ -31,17 +31,33 @@ struct AudioConfig {
 
 /// Beat / tempo detection tunables.
 ///
-/// Single user-facing knob. The detector inside (multi-band onset
-/// aggregation with adaptive thresholds + smooth pulse curve + tempo
-/// autocorrelation as instrumentation) is fully auto-tuned from the
-/// running AGC window and per-band flux baselines. `pulse_strength`
-/// biases the adaptive threshold so users can dial visual reactivity
-/// up or down without thinking about gains, refractory windows, or
-/// PLL constants.
+/// Three modes, drawn from the convergent UX of pro audio tools (Logic
+/// Smart Tempo, iZotope Master Assistant, LANDR mastering, Ableton
+/// Warp): an automatic mode that observes the audio and tunes itself,
+/// a small set of named pre-cooked profiles, and a custom mode for
+/// users who want direct control. Profile names follow Ableton's
+/// "name by signal character, not genre" convention so they don't age
+/// badly.
 struct BeatConfig {
-    /// 0 = no triggers, 1 = balanced default, > 1 = more reactive.
-    /// Internally maps to an inverse threshold multiplier on the
-    /// per-band sigma-above-baseline onset criterion.
+    enum class Mode {
+        Auto,     ///< system observes onset rate and adapts pulse strength
+        Profile,  ///< user picks a named signal-character preset
+        Custom,   ///< user controls pulse strength directly
+    };
+    enum class Profile {
+        Percussive,  ///< drums / EDM / hip-hop — bass-weighted, tight decay
+        Melodic,     ///< vocal / rock / jazz / classical — balanced bands
+        Sustained,   ///< ambient / cinematic / sparse — sensitive, long decay
+    };
+
+    Mode    mode    = Mode::Auto;
+    Profile profile = Profile::Percussive;
+
+    /// Used directly in Custom mode; in Auto/Profile modes the BeatStage
+    /// computes its own working value internally. The UI seeds this from
+    /// the snapshot's auto_pulse_strength when the user switches into
+    /// Custom mode, so the slider lands on Auto's converged value rather
+    /// than jumping back to the default.
     float pulse_strength = 1.0f;
 };
 

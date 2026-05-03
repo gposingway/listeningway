@@ -196,11 +196,13 @@ void AudioSystem::dsp_thread_main() {
         snap.spectral_centroid = frame.spectral_centroid.value_or(0.0f);
         snap.loudness          = frame.loudness.value_or(0.0f);
 
-        snap.beat             = frame.beat.value_or(0.0f);
-        snap.beat_phase       = frame.beat_phase.value_or(0.0f);
-        snap.tempo_bpm        = frame.tempo_bpm.value_or(0.0f);
-        snap.tempo_confidence = frame.tempo_confidence.value_or(0.0f);
-        snap.tempo_detected   = frame.tempo_detected.value_or(false);
+        snap.beat                 = frame.beat.value_or(0.0f);
+        snap.beat_phase           = frame.beat_phase.value_or(0.0f);
+        snap.tempo_bpm            = frame.tempo_bpm.value_or(0.0f);
+        snap.tempo_confidence     = frame.tempo_confidence.value_or(0.0f);
+        snap.tempo_detected       = frame.tempo_detected.value_or(false);
+        snap.beat_pulse_strength  = frame.beat_pulse_strength.value_or(1.0f);
+        snap.beat_auto_locked     = frame.beat_auto_locked.value_or(false);
 
         snap.phase_volume = frame.phase_volume.value_or(0.0f);
         snap.phase_bass   = frame.phase_bass.value_or(0.0f);
