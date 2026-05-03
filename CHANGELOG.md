@@ -5,6 +5,62 @@ All notable changes to Listeningway will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.0.1] - 2026-05-03
+
+Consolidates the work shipped under the v2.0.0 beta line into a
+release-quality cut. Headline changes since 2.0.0-beta.2:
+
+- **Engine rewrite** for proper DSP work — five-layer pipeline (Source
+  → SPSC ring → DSP stages → seqlock snapshot → consumers), per-stage
+  profiler in the overlay, lock-free reads. (See 2.0.0-beta.3 entry
+  for detail.)
+- **Beat tracker** replaced with a clean-room implementation of the
+  Davies / Plumbley / Stark algorithm chain (CSD-HWR onset → comb-
+  filterbank tempo with 41-state Viterbi → cumulative-score with
+  forward beat prediction). Tempo confidence reads honestly and locks
+  on dance music within seconds. ADR-0013.
+- **OpenRGB integration redesigned** around a per-zone-type pattern
+  matrix (Single / Linear / Matrix dropdowns, each catalogue ordered
+  active → soothing). Includes a Spatial Map for keyboards that
+  projects the audio direction rose onto the matrix layout. ADR-0014.
+- **Stereo spatial routing fixed** — left audio → L bucket, right
+  audio → R bucket (rather than the v1 bias toward FR/FL that
+  assumed listener-in-front-of-speakers). Two new tunables:
+  `spatial_spread`, `spatial_smoothing`.
+- **New shader uniforms**: AGC-normalized `volume_norm`/`bass_norm`/
+  `mid_norm`/`treb_norm` (+ smoothed `*_att`), `freqbands16`/`32`,
+  `spectral_centroid`, `loudness`, `tempo_bpm`/`confidence`,
+  chronotensity phases, history rings. All v1 names preserved.
+- **OSC integration** — send-only UDP, mirrors the shader uniform
+  contract under `/listeningway/*`. Default 127.0.0.1:9000.
+- **Per-process audio capture** option (Windows 10 22H2+).
+- **Persistent diagnostic log** (`listeningway.log` next to the
+  addon, gated by the Debug logging checkbox).
+
+Granular per-beta detail remains in the [2.0.0-beta.1] through
+[2.0.0-beta.4] entries below.
+
+### Documentation
+
+- `docs/openrgb.md` gains a "device shows up but doesn't physically
+  respond" entry under Failure Modes. Covers the firmware-stuck
+  state some RGB peripherals can fall into where they ignore all
+  host commands (OpenRGB, vendor software, anything). Calls out the
+  Roccat Vulcan Pro / Roccat Swarm "Reset to Factory Defaults"
+  workaround, with general advice that this isn't Listeningway- or
+  OpenRGB-specific.
+- ADR-0013 (beat tracker rewrite) and ADR-0014 (OpenRGB pattern
+  matrix) added to `docs/adr/`.
+
+### Compatibility
+
+- Shader uniform names: byte-compatible with v1. Existing v1 shaders
+  continue to work; new uniforms are additive.
+- Settings JSON: new fields default through nlohmann's
+  `_WITH_DEFAULT` macro when missing from old configs. v1 configs
+  are not migrated; v2 writes a fresh file with v2 defaults on
+  first run.
+
 ## [2.0.0-beta.4] - 2026-05-03
 
 OpenRGB integration redesigned around a per-zone-type pattern matrix:
