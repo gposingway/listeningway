@@ -1,40 +1,43 @@
-// BeatStage — mode-aware beat detection with smooth pulse curve and
-// best-effort tempo as instrumentation.
+// BeatStage — assembly of the clean-room beat tracker submodules.
 //
-// Three modes (cfg.beat.mode):
+//     CSD ODF  ──→  ODF buffer  ──→  comb_tempo (every kTempoInterval hops)
+//        │                                  │
+//        └──→  beat_tracker  ←──────────────┘ (current beat_period)
+//                  │
+//                  ├──→ beat (continuous pulse curve)
+//                  ├──→ beat_phase (sub-hop forward-predicted)
+//                  ├──→ tempo_bpm / tempo_confidence / tempo_detected
+//                  └──→ beat_pulse_strength / beat_auto_locked (UI hints)
 //
-//   Auto    — observes the recent onset rate and adapts the working
-//             pulse-strength multiplier to hit a target rate (~2/s)
-//             over a few seconds. Falls back to neutral during
-//             silence. Reports a "locked" indicator when the rate
-//             has been stable for a few seconds.
+// The four submodules (odf_csd, odf_buffer, comb_tempo, beat_tracker)
+// implement the algorithm. This stage owns one of each and runs them
+// in the right order, plus the user-facing Mode / Profile / Custom
+// presentation layer.
 //
-//   Profile — applies one of three pre-cooked signal-character
-//             presets (Percussive / Melodic / Sustained), each
-//             setting the working strength, per-band weights, and
-//             pulse decay tau to known-good values for that signal
-//             class. Names follow Ableton's "describe the signal,
-//             not the genre" convention so they don't age badly.
+// Mode behaviour (all modes share the same underlying detection — the
+// modes only shape the visible Pulse curve and report the working
+// strength to the UI):
 //
-//   Custom  — the working strength is taken directly from
-//             cfg.beat.pulse_strength. Per-band weights and decay
-//             tau use the same defaults as Auto.
+//   Auto    — pulse_strength = 1.0 always; the tempo Viterbi and
+//             cumulative-score tracker self-tune. The "Locked" badge
+//             lights up once tempo_confidence has been above threshold
+//             for ~3 s; before that it shows "Adapting…".
+//   Profile — three named presets; each picks a (pulse_strength,
+//             decay_tau) pair tuned for one signal class.
+//   Custom  — pulse_strength comes from cfg.beat.pulse_strength.
 //
-// Output uniforms (`beat`, `beat_phase`, `tempo_bpm`, `tempo_confidence`,
-// `tempo_detected`) keep their shapes. Two extra fields flow back via
-// the snapshot for the overlay UI: `beat_pulse_strength` (the working
-// value, so the Custom slider can seed off Auto's converged value) and
-// `beat_auto_locked` (drives the Adapting / Locked status badge).
-//
-// Reads:  FluxLow, FluxMid, FluxHigh, FluxTotal
+// Reads:  Magnitudes, Phases, FluxTotal
 // Writes: Beat, BeatPhase, TempoBpm, TempoConfidence, TempoDetected,
 //         BeatPulseStrength, BeatAutoLocked
 #pragma once
 
 #include <chrono>
-#include <vector>
 
 #include "../i_dsp_stage.h"
+#include "../beat/beat_tracker.h"
+#include "../beat/comb_tempo.h"
+#include "../beat/odf_buffer.h"
+#include "../beat/odf_csd.h"
 
 namespace lw::dsp {
 
@@ -43,7 +46,7 @@ public:
     std::string_view name() const override { return "beat"; }
     std::span<const FieldId> reads() const override {
         static constexpr FieldId r[] = {
-            FieldId::FluxLow, FieldId::FluxMid, FieldId::FluxHigh, FieldId::FluxTotal,
+            FieldId::Magnitudes, FieldId::Phases, FieldId::FluxTotal,
         };
         return r;
     }
@@ -60,47 +63,34 @@ public:
     void process(AnalysisFrame& frame, const config::Settings& cfg) override;
 
 private:
-    void update_tempo();
-    void update_auto_strength(float dt_sec, bool onset_fired, float audio_energy);
+    // Submodules (clean-room — see docs/adr/research-notes-beat.md).
+    beat::OdfCsd      csd_;
+    beat::OdfBuffer   odf_buf_;
+    beat::CombTempo   comb_;
+    beat::BeatTracker tracker_;
 
-    // --- Working parameters (set per-frame from current Mode/Profile) ----
-    float working_strength_ = 1.0f;
-    float weight_low_  = 1.00f;
-    float weight_mid_  = 0.70f;
-    float weight_high_ = 0.50f;
-    float decay_tau_sec_ = 0.150f;
-
-    // Last-applied mode, so we can seed working_strength_ on transition.
-    int last_mode_ = -1;
-
-    // --- Per-band onset state -------------------------------------------
-    float baseline_low_  = 0.0f, baseline_mid_  = 0.0f, baseline_high_ = 0.0f;
-    float var_low_       = 0.0f, var_mid_       = 0.0f, var_high_      = 0.0f;
-
-    // --- Pulse output ---------------------------------------------------
+    // Pulse-curve state.
     float beat_value_ = 0.0f;
     std::chrono::steady_clock::time_point last_t_{};
-    std::chrono::steady_clock::time_point last_onset_t_{};
 
-    // --- Auto-mode adaptation state -------------------------------------
-    // Onset count over a sliding window for rate estimation.
-    static constexpr float kAutoWindowSec = 5.0f;
-    std::vector<std::chrono::steady_clock::time_point> auto_onset_log_;
-    std::chrono::steady_clock::time_point last_auto_step_t_{};
-    std::chrono::steady_clock::time_point last_auto_change_t_{};
-    bool auto_locked_ = false;
-
-    // --- Tempo / phase --------------------------------------------------
-    std::vector<float> envelope_;
-    size_t env_head_ = 0, env_size_ = 0;
-    static constexpr size_t kEnvCapacity = 1024;
-
-    float tempo_bpm_        = 0.0f;
-    float tempo_confidence_ = 0.0f;
-    bool  tempo_detected_   = false;
-    float beat_phase_       = 0.0f;
-
+    // Tempo update throttle. Recompute every kTempoUpdateHops calls;
+    // the tempo is a slow signal and the comb filterbank is the most
+    // expensive op in the stage.
+    static constexpr int kTempoUpdateHops = 25;  // ~250 ms at 100 Hz envelope
     int frames_since_tempo_update_ = 0;
+
+    // Estimated envelope-update rate (how often this->process gets called),
+    // used to convert canonical (86 Hz) beat-period samples to native ones
+    // for the BeatTracker.
+    float est_hop_rate_hz_ = 100.0f;
+
+    // Auto-mode "Locked" indicator state.
+    int   confidence_above_thresh_frames_ = 0;
+    bool  auto_locked_ = false;
+
+    // Last published values for snapshot fields (so we keep emitting
+    // sensible numbers even on stale frames).
+    float last_pulse_strength_ = 1.0f;
 };
 
 }  // namespace lw::dsp
