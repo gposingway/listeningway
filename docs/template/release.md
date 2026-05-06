@@ -1,8 +1,13 @@
-**Downloads:**
-- [Listeningway-x64-{{VERSION}}.zip](https://github.com/gposingway/listeningway/releases/download/v{{VERSION}}/Listeningway-x64-{{VERSION}}.zip) for 64-bit games (FFXIV, FFVII Remake, modern AAA).
-- [Listeningway-x86-{{VERSION}}.zip](https://github.com/gposingway/listeningway/releases/download/v{{VERSION}}/Listeningway-x86-{{VERSION}}.zip) for 32-bit games (Dead Cells, FFX/X-2 HD, Skyrim LE, Dark Souls: PtDE, GTA SA, older indies/JRPGs).
+## Pick your download
 
-**Which one?** Match your ReShade DLL. If you're not sure, open Task Manager while the game runs. A `*32` suffix on the process name means use **x86**, otherwise **x64**.
+**Most users want x64.** Use x86 only if your game is 32-bit.
+
+| Architecture     | Download                                                                                                                                              | Use when                                                                                                  |
+| ---------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------- |
+| **x64** (64-bit) | [Listeningway-x64-{{VERSION}}.zip](https://github.com/gposingway/listeningway/releases/download/v{{VERSION}}/Listeningway-x64-{{VERSION}}.zip)        | FFXIV, FFVII Remake, most modern AAA, anything from ~2015 onwards                                          |
+| **x86** (32-bit) | [Listeningway-x86-{{VERSION}}.zip](https://github.com/gposingway/listeningway/releases/download/v{{VERSION}}/Listeningway-x86-{{VERSION}}.zip)        | Dead Cells, FFX/X-2 HD, Skyrim Legendary Edition, Dark Souls: PtDE, GTA San Andreas, most pre-2015 indies |
+
+Not sure? Open Task Manager while the game is running. `*32` after the process name means **x86**, otherwise **x64**.
 
 ## Installation
 1. Download the ZIP that matches your game's architecture.

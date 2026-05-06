@@ -7,19 +7,13 @@
 ![Listeningway Showcase](https://github.com/user-attachments/assets/07a324e2-46a8-4a36-88ab-3a57e5e4db70)
 ![Listeningway Showcase](https://github.com/user-attachments/assets/a474e86f-805b-4726-948b-dac4a6207e13)
 
-
-
-
-
-
-
 [<img src="https://github.com/user-attachments/assets/20794810-9e43-4167-bb0e-faf46275186e">](https://github.com/gposingway/Listeningway/releases/latest)
 
 </div>
 
 ---
 
-Listeningway is a ReShade addon that listens to system or per-game audio, analyzes it in real time, and publishes the results to anything that wants to react: ReShade shaders as annotation-bound uniforms, generative-art and VJ tools over OSC, and RGB peripherals through OpenRGB. One audio capture, three output channels, all toggleable from the in-game overlay.
+Listeningway is a ReShade addon (x64 and x86) that listens to system or per-game audio, analyzes it in real time, and publishes the results to anything that wants to react: ReShade shaders as annotation-bound uniforms, generative-art and VJ tools over OSC, and RGB peripherals through OpenRGB. One audio capture, three output channels, all toggleable from the in-game overlay.
 
 > v2.x is in beta. Shader uniform names are committed against breakage. Coming from v1? The v1 uniforms still work; new ones are additive. See [CHANGELOG.md](CHANGELOG.md) for the migration notes.
 
@@ -31,12 +25,13 @@ You need ReShade 6.3.3 or newer (API 14+) on Windows 10 or 11. AuroraShade R10 i
 
 1. Download the latest release from [the releases page](https://github.com/gposingway/Listeningway/releases/latest). Two ZIPs are published per release; **pick the one that matches your game's architecture**:
 
-   | Build                        | Use for                                                                                                              |
-   | ---------------------------- | -------------------------------------------------------------------------------------------------------------------- |
-   | `Listeningway-x64-<ver>.zip` | 64-bit games (FFXIV, FFVII Remake, most modern AAA, anything where Task Manager shows the process without `*32`).    |
-   | `Listeningway-x86-<ver>.zip` | 32-bit games (Dead Cells, FFX/X-2 HD, Skyrim LE, Dark Souls: PtDE, GTA SA, most pre-2015 indies/JRPGs).              |
+   | Build                        | Use for                                                                                                           |
+   | ---------------------------- | ----------------------------------------------------------------------------------------------------------------- |
+   | `Listeningway-x64-<ver>.zip` | 64-bit games (FFXIV, FFVII Remake, most modern AAA, anything where Task Manager shows the process without `*32`). |
+   | `Listeningway-x86-<ver>.zip` | 32-bit games (Dead Cells, FFX/X-2 HD, Skyrim LE, Dark Souls: PtDE, GTA SA, most pre-2015 indies/JRPGs).           |
 
    Each ZIP contains `Listeningway.addon`, `Listeningway.fx`, and `ListeningwayUniforms.fxh`. The shader files are identical between builds; only the `.addon` differs in architecture. Match your ReShade DLL.
+
 2. Drop the files in:
 
    | File                       | Where                                                                                               | Why                                                           |
@@ -222,7 +217,7 @@ The rest of the dependency stack:
 
 All linked statically. No extra DLLs ship beside the `.addon`.
 
-32-bit (x86) builds were contributed by [**@slendereater-sketch**](https://github.com/slendereater-sketch) (Dru Mitchell-Gary Doney-Jones), after **SmilingGerm** asked for it on r/vjing and r/deadcells. Their original port is at [Listeningway-32bit](https://github.com/slendereater-sketch/Listeningway-32bit); both architectures now build from this repo.
+32-bit (x86) build based on the work of [**@slendereater-sketch**](https://github.com/slendereater-sketch) (Dru Mitchell-Gary Doney-Jones) - original port: [Listeningway-32bit](https://github.com/slendereater-sketch/Listeningway-32bit).
 
 ---
 
