@@ -50,30 +50,39 @@ tests/            GoogleTest unit + replay tests (rapidcheck for properties)
 ## Build
 
 ```
-prepare.bat   # clones ReShade SDK + vcpkg, installs deps, configures CMake
-build.bat     # builds Release, renames to .addon, copies to dist/, deploys
+prepare.bat   # one-time bootstrap: clones ReShade SDK + vcpkg, installs deps for x64+x86
+build.bat     # builds both arches Release, emits dist/Listeningway-{x64,x86}.addon, deploys x64
 ```
 
-Set `LISTENINGWAY_DEPLOY_DIR=...` in your environment to retarget the auto-deploy step (defaults to the FFXIV path).
+`prepare.bat` is idempotent — re-run it any time to refresh deps. `build.bat` auto-configures `build-x64/` and `build-x86/` on demand if their `CMakeCache.txt` is missing, so deleting either build directory triggers a clean reconfigure on the next build.
 
-Manual build:
+Set `LISTENINGWAY_DEPLOY_DIR=...` to retarget the auto-deploy step (defaults to the FFXIV path). Set `LISTENINGWAY_DEPLOY_ARCH=x86` to deploy the 32-bit binary instead of the default x64.
+
+Manual single-arch build (fast iteration on one architecture):
 
 ```
-cmake -S . -B build -G "Visual Studio 17 2022" -A x64 ^
+:: x64 (default)
+cmake -S . -B build-x64 -G "Visual Studio 17 2022" -A x64 ^
       -DCMAKE_TOOLCHAIN_FILE=tools/vcpkg/scripts/buildsystems/vcpkg.cmake ^
       -DVCPKG_TARGET_TRIPLET=x64-windows-static
-cmake --build build --config Release
+cmake --build build-x64 --config Release
+
+:: x86 (for older / 32-bit ReShade hosts — Dead Cells, Skyrim LE, FFX HD, ...)
+cmake -S . -B build-x86 -G "Visual Studio 17 2022" -A Win32 ^
+      -DCMAKE_TOOLCHAIN_FILE=tools/vcpkg/scripts/buildsystems/vcpkg.cmake ^
+      -DVCPKG_TARGET_TRIPLET=x86-windows-static
+cmake --build build-x86 --config Release
 ```
 
-Tests:
+Tests (x64; the test target is single-arch — same source compiles either way):
 
 ```
-cmake -S . -B build -DLISTENINGWAY_BUILD_TESTS=ON ...
-cmake --build build --config Release
-ctest --test-dir build --output-on-failure -C Release
+cmake -S . -B build-x64 -DLISTENINGWAY_BUILD_TESTS=ON ...
+cmake --build build-x64 --config Release
+ctest --test-dir build-x64 --output-on-failure -C Release
 ```
 
-Toolchain: MSVC 2022 (17.x or newer), C++20, vcpkg manifest mode, `x64-windows-static` triplet. Compile flags: `/W4 /permissive- /Zc:preprocessor /Zc:__cplusplus /MP` (warnings-as-errors enforced in CI). See [ADR-0008](docs/adr/0008-language-and-dependencies.md) for pinning rationale.
+Toolchain: MSVC 2022 (17.x or newer), C++20, vcpkg manifest mode, both `x64-windows-static` and `x86-windows-static` triplets. Compile flags: `/W4 /permissive- /Zc:preprocessor /Zc:__cplusplus /MP` (warnings-as-errors enforced in CI). See [ADR-0008](docs/adr/0008-language-and-dependencies.md) for pinning rationale.
 
 ## How to add things
 

@@ -80,7 +80,9 @@ Optimization flags per configuration follow MSVC defaults; `/O2 /Oi /GL` for Rel
 
 ### Triplet
 
-`x64-windows-static` (preserved from v1). Static linkage avoids a vcpkg DLL dependency tree shipping alongside the addon.
+Both `x64-windows-static` and `x86-windows-static`. Each release ships per-architecture addons (`Listeningway-x64.addon`, `Listeningway-x86.addon`) so users can match the bitness of their ReShade host. Static linkage avoids a vcpkg DLL dependency tree shipping alongside the addon.
+
+The x64 triplet was preserved from v1; x86 was added post-2.0.1 to serve 32-bit ReShade hosts (Dead Cells, FFX/X-2 HD, Skyrim LE, older DX9/DX11 indies). The source tree is architecture-neutral — no `#ifdef _WIN64` pathways — so the only build-system delta is the triplet and CMake `-A` platform; `prepare.bat` installs both, `build.bat` configures and builds both.
 
 ### CMake
 
